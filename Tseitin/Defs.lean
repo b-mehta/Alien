@@ -50,7 +50,12 @@ lemma mul_assoc' (x y z : Tseitin) : mul x (mul y z) = mul (mul x y) z := by
 lemma mk_mul_mk {x y : TseitinGen} : mk x * mk y = mk (x.mul y) := rfl
 
 instance : CoeFun Tseitin (fun _ ↦ Tseitin → Tseitin) where
-  coe x := HMul.hMul x
+  coe x := mul x
+
+@[app_unexpander Tseitin.mul]
+meta def unexpandTseitinMul : Lean.PrettyPrinter.Unexpander
+  | `($_mul $x $y) => `($x $y)
+  | _ => throw ()
 
 variable (x y z : Tseitin)
 
