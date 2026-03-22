@@ -7,6 +7,7 @@ on:
       - 'master'
     paths:
       - 'lean-toolchain'
+  workflow_dispatch:
 
 jobs:
   lean-release-tag:
