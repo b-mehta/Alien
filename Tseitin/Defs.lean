@@ -90,6 +90,8 @@ open Lean PrettyPrinter Delaborator SubExpr
 meta def delabTseitinHMul : Delab :=
   whenPPOption getPPCoercions <|
   withOverApp 6 do
+    let α ← withNaryArg 0 getExpr
+    guard <| α.isConstOf ``Tseitin
     let x ← withNaryArg 4 delab
     let y ← withNaryArg 5 delab
     match x with
