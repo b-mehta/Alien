@@ -14,14 +14,16 @@ public structure Compressed : Type where
   headTop : List Cell
   headBot : List Cell
   tail : List (List Cell × List Cell)
+deriving BEq
 
 open Compressed
 
-def mapPair (a b : List Cell) : List TseitinGen := a.map Cell.asTop ++ b.map Cell.asBot
+@[expose] public def mapPair (a b : List Cell) : List TseitinGen :=
+  a.map Cell.asTop ++ b.map Cell.asBot
 
 @[simp] lemma mapPair_nil_nil : mapPair [] [] = [] := rfl
 
-public def Compressed.toList : Compressed → List TseitinGen
+@[expose] public def Compressed.toList : Compressed → List TseitinGen
   | ⟨tops, bots, []⟩ => mapPair tops bots
   | ⟨tops, bots, (top, bot) :: tail⟩ => mapPair tops bots ++ .X' :: toList ⟨top, bot, tail⟩
 
@@ -40,7 +42,7 @@ public def Compressed.toList : Compressed → List TseitinGen
   · simp_all
   · rw [toList]; simp
 
-public def denote : List TseitinGen → Tseitin
+@[expose] public def denote : List TseitinGen → Tseitin
   | [] => X
   | x :: xs => xs.foldl (init := mk x) (fun acc g => acc * mk g)
 
@@ -194,7 +196,7 @@ private lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa :
   · simp [toList, denote_X_absorb ha haa]
     simpa using denote_mapPair_merge (X' :: toList ⟨t2, b2, tl'⟩)
 
-public meta def normalise : List TseitinGen → Compressed :=
+@[expose] public def normalise : List TseitinGen → Compressed :=
   List.foldr (init := ⟨[], [], []⟩) <| fun
   | .X', ⟨tops, bots, xs⟩ => ⟨[], [], (tops, bots) :: xs⟩
   | .a', ⟨tops, bots, xs⟩ => ⟨.a :: tops, bots, xs⟩
@@ -236,7 +238,7 @@ public theorem normalise_correctness :
     | nil => cases x <;> simp [toList, mapPair]
     | cons y l' => cases x <;> simp [denote_cons normalise_cons_ne_empty, ih]
 
-private meta def simplifyAux (tops bots : List Cell) :
+@[expose] public def simplifyAux (tops bots : List Cell) :
     List (List Cell × List Cell) → Compressed
   | [] => ⟨tops, bots, []⟩
   | (top, bot) :: tl =>
@@ -244,7 +246,7 @@ private meta def simplifyAux (tops bots : List Cell) :
       simplifyAux (tops ++ top) (bots ++ bot) tl
     else ⟨tops, bots, (top, bot) :: tl⟩
 
-public meta def simplify (c : Compressed) : Compressed :=
+@[expose] public def simplify (c : Compressed) : Compressed :=
   simplifyAux c.headTop c.headBot c.tail
 
 private lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
@@ -265,7 +267,7 @@ public lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c
   exact simplifyAux_correctness tops bots tl
 
 open Lean Meta in
-meta partial def reify (e : Expr) : MetaM (List TseitinGen) := do
+partial def reify (e : Expr) : MetaM (List TseitinGen) := do
   match_expr e with
   | HMul.hMul _ _ _ _ x y => return (← reify x) ++ (← reify y)
   | Tseitin.a => return [.a']
@@ -276,7 +278,7 @@ meta partial def reify (e : Expr) : MetaM (List TseitinGen) := do
   | _ => throwError "reify: unexpected Tseitin expression {e}"
 
 open Lean in
-meta instance : ToExpr TseitinGen where
+instance : ToExpr TseitinGen where
   toExpr
     | .a' => mkConst ``TseitinGen.a'
     | .b' => mkConst ``TseitinGen.b'
@@ -285,38 +287,32 @@ meta instance : ToExpr TseitinGen where
     | .X' => mkConst ``TseitinGen.X'
   toTypeExpr := mkConst ``TseitinGen
 
-private meta def Compressed.beq : Compressed → Compressed → Bool
-  | ⟨tops₁, bots₁, []⟩, ⟨tops₂, bots₂, []⟩ => tops₁ == tops₂ && bots₁ == bots₂
-  | ⟨tops₁, bots₁, (t₁, b₁) :: tl₁⟩, ⟨tops₂, bots₂, (t₂, b₂) :: tl₂⟩ =>
-     tops₁ == tops₂ && bots₁ == bots₂ && Compressed.beq ⟨t₁, b₁, tl₁⟩ ⟨t₂, b₂, tl₂⟩
-  | _, _ => false
-
 theorem simplify_normalise_proof {l₁ l₂ : List TseitinGen}
     (h : denote (simplify (normalise l₁)).toList = denote (simplify (normalise l₂)).toList) :
     denote l₁ = denote l₂ := by
   rw [← normalise_correctness (l := l₁), ← normalise_correctness (l := l₂),
       ← simplify_correctness (normalise l₁), ← simplify_correctness (normalise l₂), h]
 
-open Lean Meta Elab Tactic in
-elab "tseitin_norm" : tactic => liftMetaFinishingTactic fun goal ↦ do
+open Lean Meta Elab Tactic
+
+public def normTactic (goal : MVarId) : MetaM Unit := do
   let goalType ← goal.getType'
   let some (_, lhs, rhs) := goalType.eq? | throwError "tseitin_norm: goal is not an equality"
   let raw₁ ← reify lhs
   let raw₂ ← reify rhs
-  unless (normalise raw₁).beq (normalise raw₂) do throwError "tseitin_norm: normal forms differ"
+  unless (normalise raw₁) == (normalise raw₂) do throwError "tseitin_norm: normal forms differ"
   let nc₁ := mkApp (mkConst ``normalise_correctness) (toExpr raw₁)
   let nc₂ := mkApp (mkConst ``normalise_correctness) (toExpr raw₂)
   let symm₁ ← mkAppM ``Eq.symm #[nc₁]
   let proof ← mkAppM ``Eq.trans #[symm₁, nc₂]
   goal.assign proof
 
-open Lean Meta Elab Tactic in
-elab "create" : tactic => liftMetaFinishingTactic fun goal ↦ do
+public def createTactic (goal : MVarId) : MetaM Unit := do
   let goalType ← goal.getType'
   let some (_, lhs, rhs) := goalType.eq? | throwError "create: goal is not an equality"
   let raw₁ ← reify lhs
   let raw₂ ← reify rhs
-  unless (simplify (normalise raw₁)).beq (simplify (normalise raw₂)) do
+  unless (simplify (normalise raw₁)) == (simplify (normalise raw₂)) do
     throwError "create: simplified normal forms differ"
   let raw₁Expr := toExpr raw₁
   let raw₂Expr := toExpr raw₂
@@ -344,14 +340,3 @@ elab "create" : tactic => liftMetaFinishingTactic fun goal ↦ do
   goal.assign proof
 
 end Tseitin
-
-open Tseitin
-
-example : a A b = a b A := by tseitin_norm
-example : a A b B = a b A B := by tseitin_norm
-example : a A b B = A B a b := by tseitin_norm
-
-example : a A A X = a A A := by create
-example : A b a A X = b a A A := by create
-
-example : a a A A A X = a a A A A := by create
