@@ -52,10 +52,16 @@ lemma mk_mul_mk {x y : TseitinGen} : mk x * mk y = mk (x.mul y) := rfl
 instance : CoeFun Tseitin (fun _ ↦ Tseitin → Tseitin) where
   coe x := mul x
 
-@[app_unexpander Tseitin.mul]
-meta def unexpandTseitinMul : Lean.PrettyPrinter.Unexpander
-  | `($_mul $x $y) => `($x $y)
-  | _ => throw ()
+open Lean PrettyPrinter Delaborator SubExpr in
+@[app_delab Tseitin.mul]
+meta def delabTseitinMul : Delab :=
+  whenNotPPOption getPPExplicit <|
+  withOverApp 2 do
+    let x ← withNaryArg 0 delab
+    let y ← withNaryArg 1 delab
+    match x with
+    | `($f $args*) => `($f $args* $y)
+    | _ => `($x $y)
 
 variable (x y z : Tseitin)
 
