@@ -95,7 +95,7 @@ meta def delabTseitinHMul : Delab :=
     let x ← withNaryArg 4 delab
     let y ← withNaryArg 5 delab
     match x with
-    | `($f $args*) => `($f $args* $y)
+    | `($z $args*) => `($z $args* $y)
     | _ => `($x $y)
 
 end Delab
