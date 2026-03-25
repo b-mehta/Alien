@@ -21,7 +21,7 @@ def mapPair (a b : List Cell) : List TseitinGen := a.map Cell.asTop ++ b.map Cel
 
 @[simp] lemma mapPair_nil_nil : mapPair [] [] = [] := rfl
 
-def Compressed.toList : Compressed → List TseitinGen
+public def Compressed.toList : Compressed → List TseitinGen
   | ⟨tops, bots, []⟩ => mapPair tops bots
   | ⟨tops, bots, (top, bot) :: tail⟩ => mapPair tops bots ++ .X' :: toList ⟨top, bot, tail⟩
 
@@ -40,7 +40,7 @@ def Compressed.toList : Compressed → List TseitinGen
   · simp_all
   · rw [toList]; simp
 
-def denote : List TseitinGen → Tseitin
+public def denote : List TseitinGen → Tseitin
   | [] => X
   | x :: xs => xs.foldl (init := mk x) (fun acc g => acc * mk g)
 
@@ -194,7 +194,7 @@ private lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa :
   · simp [toList, denote_X_absorb ha haa]
     simpa using denote_mapPair_merge (X' :: toList ⟨t2, b2, tl'⟩)
 
-meta def normalise : List TseitinGen → Compressed :=
+public meta def normalise : List TseitinGen → Compressed :=
   List.foldr (init := ⟨[], [], []⟩) <| fun
   | .X', ⟨tops, bots, xs⟩ => ⟨[], [], (tops, bots) :: xs⟩
   | .a', ⟨tops, bots, xs⟩ => ⟨.a :: tops, bots, xs⟩
@@ -226,7 +226,7 @@ meta def normalise : List TseitinGen → Compressed :=
   | .A' => toList_ne_empty_of_bot (by simp)
   | .B' => toList_ne_empty_of_bot (by simp)
 
-theorem normalise_correctness :
+public theorem normalise_correctness :
     ∀ {l : List TseitinGen}, denote (normalise l).toList = denote l := by
   intro l
   induction l with
@@ -244,7 +244,7 @@ private meta def simplifyAux (tops bots : List Cell) :
       simplifyAux (tops ++ top) (bots ++ bot) tl
     else ⟨tops, bots, (top, bot) :: tl⟩
 
-meta def simplify (c : Compressed) : Compressed :=
+public meta def simplify (c : Compressed) : Compressed :=
   simplifyAux c.headTop c.headBot c.tail
 
 private lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
@@ -260,7 +260,7 @@ private lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List C
       exact merge_segments h.1 h.2 p.1 p.2 tl
     case isFalse => rfl
 
-lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c.toList := by
+public lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c.toList := by
   intro ⟨tops, bots, tl⟩
   exact simplifyAux_correctness tops bots tl
 
@@ -353,3 +353,5 @@ example : a A b B = A B a b := by tseitin_norm
 
 example : a A A X = a A A := by create
 example : A b a A X = b a A A := by create
+
+example : a a A A A X = a a A A A := by create
