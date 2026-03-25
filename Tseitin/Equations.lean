@@ -2,7 +2,7 @@ module
 
 public import Tseitin.Defs
 
-open Tseitin
+namespace Tseitin
 
 public section positive
 
@@ -278,3 +278,5 @@ lemma problem15 :
 end intermediate
 
 end positive
+
+end Tseitin

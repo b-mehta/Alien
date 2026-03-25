@@ -2,52 +2,82 @@ module
 
 public import Mathlib.Data.Quot
 public import Mathlib.Algebra.Group.Defs
+public import Mathlib.Algebra.Free
+public import Mathlib.Algebra.FreeMonoid.Basic
 
 import Mathlib.Analysis.Normed.Ring.Lemmas
 import Mathlib.LinearAlgebra.Matrix.Notation
 
 public section
 
-inductive TseitinGen | a' | b' | A' | B' | X' | mul (x y : TseitinGen)
+inductive TseitinGen | a' | b' | A' | B' | X'
+  deriving Repr, DecidableEq
 
 open TseitinGen
 
-inductive TseitinRel : TseitinGen → TseitinGen → Prop
-  | ac_comm : TseitinRel (A'.mul a') (a'.mul A')
-  | ad_comm : TseitinRel (B'.mul a') (a'.mul B')
-  | bc_comm : TseitinRel (A'.mul b') (b'.mul A')
-  | bd_comm : TseitinRel (B'.mul b') (b'.mul B')
-  | ea_swap : TseitinRel ((X'.mul a').mul A') (A'.mul X')
-  | eb_swap : TseitinRel ((X'.mul b').mul B') (B'.mul X')
-  | acce : TseitinRel (((a'.mul A').mul A').mul X') ((a'.mul A').mul A')
-  | assoc (x y z : TseitinGen) : TseitinRel (x.mul (y.mul z)) ((x.mul y).mul z)
-  | lcongr (x y z : TseitinGen) : TseitinRel x y → TseitinRel (x.mul z) (y.mul z)
-  | rcongr (x y z : TseitinGen) : TseitinRel y z → TseitinRel (x.mul y) (x.mul z)
+section
+
+inductive Cell | a | b deriving Repr, DecidableEq
+
+@[expose] def Cell.asTop : Cell → TseitinGen
+  | .a => .a'
+  | .b => .b'
+
+@[expose] def Cell.asBot : Cell → TseitinGen
+  | .a => .A'
+  | .b => .B'
+
+end
+
+def embed {α : Type*} : FreeSemigroup α →ₙ* FreeMonoid α := FreeSemigroup.lift .of
+
+open FreeMonoid in
+inductive TseitinMonoidRel : FreeMonoid TseitinGen → FreeMonoid TseitinGen → Prop
+  | ac_comm : TseitinMonoidRel (of A' * of a') (of a' * of A')
+  | ad_comm : TseitinMonoidRel (of B' * of a') (of a' * of B')
+  | bc_comm : TseitinMonoidRel (of A' * of b') (of b' * of A')
+  | bd_comm : TseitinMonoidRel (of B' * of b') (of b' * of B')
+  | ea_swap : TseitinMonoidRel ((of X' * of a') * of A') (of A' * of X')
+  | eb_swap : TseitinMonoidRel ((of X' * of b') * of B') (of B' * of X')
+  | acce : TseitinMonoidRel (((of a' * of A') * of A') * of X') ((of a' * of A') * of A')
+  | lcongr (x y z : FreeMonoid TseitinGen) : TseitinMonoidRel x y → TseitinMonoidRel (x * z) (y * z)
+  | rcongr (x y z : FreeMonoid TseitinGen) : TseitinMonoidRel y z → TseitinMonoidRel (x * y) (x * z)
+
+def TseitinRel : FreeSemigroup TseitinGen → FreeSemigroup TseitinGen → Prop :=
+  fun x y ↦ TseitinMonoidRel (embed x) (embed y)
 
 @[expose] public def Tseitin : Type := Quot TseitinRel
 
 namespace Tseitin
 
-@[expose, match_pattern] def a : Tseitin := Quot.mk _ a'
-@[expose, match_pattern] def b : Tseitin := Quot.mk _ b'
-@[expose, match_pattern] def A : Tseitin := Quot.mk _ A'
-@[expose, match_pattern] def B : Tseitin := Quot.mk _ B'
-@[expose, match_pattern] def X : Tseitin := Quot.mk _ X'
+open FreeSemigroup
 
-@[expose] def mk : TseitinGen → Tseitin := Quot.mk _
+@[expose] def mk : TseitinGen → Tseitin := Quot.mk _ ∘ of
+
+@[expose, match_pattern] def a : Tseitin := mk a'
+@[expose, match_pattern] def b : Tseitin := mk b'
+@[expose, match_pattern] def A : Tseitin := mk A'
+@[expose, match_pattern] def B : Tseitin := mk B'
+@[expose, match_pattern] def X : Tseitin := mk X'
+
+@[simp] lemma mk_a' : mk a' = a := rfl
+@[simp] lemma mk_b' : mk b' = b := rfl
+@[simp] lemma mk_A' : mk A' = A := rfl
+@[simp] lemma mk_B' : mk B' = B := rfl
+@[simp] lemma mk_X' : mk X' = X := rfl
 
 @[expose] def mul : Tseitin → Tseitin → Tseitin :=
-    .map₂ TseitinGen.mul .rcongr .lcongr
+    .map₂ (· * ·)
+    (fun _ _ _ h ↦ by simpa [TseitinRel] using h.rcongr _ _ _)
+    (fun _ _ _ h ↦ by simpa [TseitinRel] using h.lcongr _ _ _)
 
 lemma mul_assoc' (x y z : Tseitin) : mul x (mul y z) = mul (mul x y) z := by
   induction x, y, z using Quot.induction_on₃ with
-  | h a b c => exact Quot.sound (.assoc _ _ _)
+  | h a b c => exact congrArg _ (mul_assoc _ _ _).symm
 
 @[expose] instance : Semigroup Tseitin where
   mul := Tseitin.mul
   mul_assoc _ _ _ := (mul_assoc' _ _ _).symm
-
-lemma mk_mul_mk {x y : TseitinGen} : mk x * mk y = mk (x.mul y) := rfl
 
 instance : CoeFun Tseitin (fun _ ↦ Tseitin → Tseitin) where
   coe x := HMul.hMul x
