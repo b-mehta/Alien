@@ -17,21 +17,22 @@ public structure Compressed : Type where
 
 open Compressed
 
-@[simp] def mapPair (a b : List Cell) : List TseitinGen := a.map Cell.asTop ++ b.map Cell.asBot
+def mapPair (a b : List Cell) : List TseitinGen := a.map Cell.asTop ++ b.map Cell.asBot
+
+@[simp] lemma mapPair_nil_nil : mapPair [] [] = [] := rfl
 
 def Compressed.toList : Compressed → List TseitinGen
-  | ⟨hT, hB, []⟩ => mapPair hT hB
-  | ⟨hT, hB, (top, bot) :: tail⟩ =>
-    mapPair hT hB ++ .X' :: Compressed.toList ⟨top, bot, tail⟩
+  | ⟨tops, bots, []⟩ => mapPair tops bots
+  | ⟨tops, bots, (top, bot) :: tail⟩ => mapPair tops bots ++ .X' :: toList ⟨top, bot, tail⟩
 
 @[grind .] lemma toList_ne_empty_of_top {a b c} (ha : a ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
   cases c
-  · simp [toList, *]
+  · simp [toList, mapPair, *]
   · rw [toList]; simp
 
-@[grind .] lemma toList_ne_empty_of_bot {a b c} (hb : b ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
+@[grind .] lemma toList_ne_empty_of_bot {a b c} (bots : b ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
   cases c
-  · simp [toList, *]
+  · simp [toList, mapPair, *]
   · rw [toList]; simp
 
 @[grind .] lemma toList_ne_empty_of_tail {a b c} (hc : c ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
@@ -43,7 +44,6 @@ def denote : List TseitinGen → Tseitin
   | [] => X
   | x :: xs => xs.foldl (init := mk x) (fun acc g => acc * mk g)
 
-
 private lemma foldl_mul_left (a b : Tseitin) (l : List TseitinGen) :
     l.foldl (init := a * b) (fun acc g => acc * mk g) =
     a * l.foldl (init := b) (fun acc g => acc * mk g) := by
@@ -51,7 +51,9 @@ private lemma foldl_mul_left (a b : Tseitin) (l : List TseitinGen) :
   | nil => rfl
   | cons x l ih => simp only [List.foldl_cons, _root_.mul_assoc, ih]
 
-@[simp] lemma denote_cons_cons (x y : TseitinGen) (l : List TseitinGen) :
+@[simp, grind =] lemma denote_singleton (x : TseitinGen) : denote [x] = mk x := rfl
+
+@[simp, grind =] lemma denote_cons_cons (x y : TseitinGen) (l : List TseitinGen) :
     denote (x :: y :: l) = mk x * denote (y :: l) :=
   foldl_mul_left (mk x) (mk y) l
 
@@ -59,14 +61,14 @@ lemma denote_cons {x} {l : List TseitinGen} (h : l ≠ []) :
     denote (x :: l) = mk x * denote l :=
   match l, h with | _ :: _, _ => denote_cons_cons ..
 
-@[simp] lemma toList_cons_top (c : Cell) (hT : List Cell) (hB : List Cell)
+@[simp] lemma toList_cons_top (c : Cell) (tops : List Cell) (bots : List Cell)
     (tl : List (List Cell × List Cell)) :
-    toList ⟨c :: hT, hB, tl⟩ = Cell.asTop c :: toList ⟨hT, hB, tl⟩ := by
+    toList ⟨c :: tops, bots, tl⟩ = Cell.asTop c :: toList ⟨tops, bots, tl⟩ := by
   rcases tl with _ | ⟨⟨top, bot⟩, tl⟩ <;>
     simp only [Compressed.toList, mapPair, List.map_cons, List.cons_append]
 
-@[simp] lemma toList_nil_nil_cons (hT hB : List Cell) (tl : List (List Cell × List Cell)) :
-    toList ⟨[], [], (hT, hB) :: tl⟩ = X' :: toList ⟨hT, hB, tl⟩ := by
+@[simp] lemma toList_nil_nil_cons (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
+    toList ⟨[], [], (tops, bots) :: tl⟩ = X' :: toList ⟨tops, bots, tl⟩ := by
   simp [toList]
 
 lemma top_bot_comm (t c : Cell) :
@@ -92,20 +94,113 @@ lemma denote_bot_comm_tops (c : Cell) (tops : List Cell) (rest : List TseitinGen
     conv_rhs => rw [denote_cons (List.cons_ne_nil _ _)]
     exact mk_mul_comm_denote t c _
 
-@[simp] private lemma denote_toList_cons_bot (c : Cell) (hT hB : List Cell)
+@[simp] private lemma denote_toList_cons_bot (c : Cell) (tops bots : List Cell)
     (tl : List (List Cell × List Cell)) :
-    denote (toList ⟨hT, c :: hB, tl⟩) = denote (Cell.asBot c :: toList ⟨hT, hB, tl⟩) := by
+    denote (toList ⟨tops, c :: bots, tl⟩) = denote (Cell.asBot c :: toList ⟨tops, bots, tl⟩) := by
   rcases tl with _ | ⟨⟨t, b⟩, rest⟩ <;>
     simp only [Compressed.toList, mapPair, List.map_cons, List.cons_append, List.append_assoc] <;>
-    exact denote_bot_comm_tops c hT _
+    exact denote_bot_comm_tops c tops _
+
+private lemma denote_cons_congr (x : TseitinGen) {l₁ l₂ : List TseitinGen}
+    (h : denote l₁ = denote l₂) (he : l₁ = [] ↔ l₂ = []) :
+    denote (x :: l₁) = denote (x :: l₂) := by
+  rcases l₁ with _ | ⟨y, ys⟩
+  · simp [he.mp rfl]
+  · have : l₂ ≠ [] := fun h' => List.cons_ne_nil y ys (he.mpr h')
+    rw [denote_cons (List.cons_ne_nil _ _), denote_cons this, h]
+
+private lemma denote_append {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) (h₂ : l₂ ≠ []) :
+    denote (l₁ ++ l₂) = denote l₁ * denote l₂ := by
+  induction l₁ with
+  | nil => exact absurd rfl h₁
+  | cons x xs ih =>
+    cases xs with
+    | nil => exact denote_cons h₂
+    | cons y ys =>
+      simp only [List.cons_append, denote_cons_cons]
+      grind
+
+@[grind =]
+private lemma denote_cons_append {x : TseitinGen} {l₁ l₂ : List TseitinGen} (h₂ : l₂ ≠ []) :
+    denote (x :: l₁ ++ l₂) = denote (x :: l₁) * denote l₂ := by
+  rw [denote_append (by simp) h₂]
+
+@[grind =]
+private lemma denote_append_cons {x : TseitinGen} {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) :
+    denote (l₁ ++ x :: l₂) = denote l₁ * denote (x :: l₂) := by
+  rw [denote_append h₁ (List.cons_ne_nil _ _)]
+
+private lemma denote_tops_comm_bots (tops : List Cell) (bots : List Cell) (rest : List TseitinGen) :
+    denote (tops.map Cell.asTop ++ bots.map Cell.asBot ++ rest) =
+    denote (bots.map Cell.asBot ++ tops.map Cell.asTop ++ rest) := by
+  induction bots generalizing rest with
+  | nil => simp
+  | cons c bots' ih =>
+    simp only [List.map_cons, List.cons_append, List.append_assoc]
+    rw [denote_bot_comm_tops c tops (bots'.map Cell.asBot ++ rest)]
+    have ih' := ih rest; simp only [List.append_assoc] at ih'
+    exact denote_cons_congr _ ih' (by simp [List.append_eq_nil_iff]; tauto)
+
+private lemma denote_mapPair_mul_X {tops bots : List Cell}
+    (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots) :
+    denote (mapPair tops bots) * X = denote (mapPair tops bots) := by
+  obtain ⟨tops', rfl⟩ := ha; obtain ⟨bots', rfl⟩ := haa
+  simp only [mapPair, List.map_append, List.map_cons, List.map_nil, List.append_assoc,
+             List.singleton_append, Cell.asTop, Cell.asBot]
+  suffices base : denote (a' :: List.map Cell.asBot bots' ++ [A', A']) * X =
+      denote (a' :: List.map Cell.asBot bots' ++ [A', A']) by
+    cases tops' with
+    | nil => simpa using base
+    | cons x xs =>
+      simp only [List.map_cons]
+      rw [denote_append_cons (List.cons_ne_nil _ _)]
+      grind
+  have : denote (a' :: bots'.map Cell.asBot ++ [A', A']) =
+         denote (bots'.map Cell.asBot ++ [a', A', A']) := by
+    simpa using denote_tops_comm_bots [.a] bots' [A', A']
+  rw [this]
+  cases bots' with
+  | nil => exact acce
+  | cons c cs =>
+    rw [List.map_cons, denote_append_cons (by simp), ← mul_assoc]
+    simp [denote, acce]
+
+private lemma denote_prefix_congr (pref : List TseitinGen) {l₁ l₂ : List TseitinGen}
+    (h : denote l₁ = denote l₂) (he : l₁ = [] ↔ l₂ = []) :
+    denote (pref ++ l₁) = denote (pref ++ l₂) := by
+  cases pref with grind
+
+private lemma denote_mapPair_merge {tops top bots bot : List Cell} (rest : List TseitinGen) :
+    denote (mapPair (tops ++ top) (bots ++ bot) ++ rest) =
+    denote (mapPair tops bots ++ mapPair top bot ++ rest) := by
+  simp only [mapPair, List.map_append, List.append_assoc]
+  apply denote_prefix_congr (tops.map Cell.asTop)
+  · simpa using denote_tops_comm_bots top bots (bot.map Cell.asBot ++ rest)
+  · grind [List.append_eq_nil_iff]
+
+private lemma denote_X_absorb {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
+    (rest : List TseitinGen) :
+    denote (mapPair tops bots ++ X' :: rest) = denote (mapPair tops bots ++ rest) := by
+  have hne : mapPair tops bots ≠ [] := by obtain ⟨_, rfl⟩ := ha; simp [mapPair]
+  cases rest with simp [denote_append_cons, denote_mapPair_mul_X, *]
+
+private lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
+    (top bot : List Cell) (tl : List (List Cell × List Cell)) :
+    denote (toList ⟨tops ++ top, bots ++ bot, tl⟩) =
+    denote (toList ⟨tops, bots, (top, bot) :: tl⟩) := by
+  rcases tl with _ | ⟨⟨t2, b2⟩, tl'⟩
+  · simp [toList, denote_X_absorb ha haa]
+    simpa using denote_mapPair_merge []
+  · simp [toList, denote_X_absorb ha haa]
+    simpa using denote_mapPair_merge (X' :: toList ⟨t2, b2, tl'⟩)
 
 meta def normalise : List TseitinGen → Compressed :=
   List.foldr (init := ⟨[], [], []⟩) <| fun
-  | .X', ⟨hT, hB, xs⟩ => ⟨[], [], (hT, hB) :: xs⟩
-  | .a', ⟨hT, hB, xs⟩ => ⟨.a :: hT, hB, xs⟩
-  | .b', ⟨hT, hB, xs⟩ => ⟨.b :: hT, hB, xs⟩
-  | .A', ⟨hT, hB, xs⟩ => ⟨hT, .a :: hB, xs⟩
-  | .B', ⟨hT, hB, xs⟩ => ⟨hT, .b :: hB, xs⟩
+  | .X', ⟨tops, bots, xs⟩ => ⟨[], [], (tops, bots) :: xs⟩
+  | .a', ⟨tops, bots, xs⟩ => ⟨.a :: tops, bots, xs⟩
+  | .b', ⟨tops, bots, xs⟩ => ⟨.b :: tops, bots, xs⟩
+  | .A', ⟨tops, bots, xs⟩ => ⟨tops, .a :: bots, xs⟩
+  | .B', ⟨tops, bots, xs⟩ => ⟨tops, .b :: bots, xs⟩
 
 @[simp] lemma normalise_nil : normalise [] = ⟨[], [], []⟩ := rfl
 @[simp] lemma normalise_X_cons {l} :
@@ -138,22 +233,36 @@ theorem normalise_correctness :
   | nil => simp [toList]
   | cons x l ih =>
     cases l with
-    | nil => cases x <;> simp [toList, Cell.asTop, Cell.asBot]
-    | cons y l' =>
-      cases x <;> simp [denote_cons normalise_cons_ne_empty, ih, Cell.asTop, Cell.asBot]
+    | nil => cases x <;> simp [toList, mapPair]
+    | cons y l' => cases x <;> simp [denote_cons normalise_cons_ne_empty, ih]
 
-private meta def simplifyAux (hT hB : List Cell) :
+private meta def simplifyAux (tops bots : List Cell) :
     List (List Cell × List Cell) → Compressed
-  | [] => ⟨hT, hB, []⟩
+  | [] => ⟨tops, bots, []⟩
   | (top, bot) :: tl =>
-    if [.a].isSuffixOf hT && [.a, .a].isSuffixOf hB then
-      simplifyAux (hT ++ top) (hB ++ bot) tl
-    else ⟨hT, hB, (top, bot) :: tl⟩
+    if [.a].isSuffixOf tops && [.a, .a].isSuffixOf bots then
+      simplifyAux (tops ++ top) (bots ++ bot) tl
+    else ⟨tops, bots, (top, bot) :: tl⟩
 
 meta def simplify (c : Compressed) : Compressed :=
   simplifyAux c.headTop c.headBot c.tail
 
-lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c.toList := sorry
+private lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
+    denote (simplifyAux tops bots tl).toList = denote (toList ⟨tops, bots, tl⟩) := by
+  induction tl generalizing tops bots with
+  | nil => rfl
+  | cons p tl ih =>
+    simp only [simplifyAux]
+    split
+    case isTrue h =>
+      simp only [Bool.and_eq_true_iff, List.isSuffixOf_iff_suffix] at h
+      rw [ih]
+      exact merge_segments h.1 h.2 p.1 p.2 tl
+    case isFalse => rfl
+
+lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c.toList := by
+  intro ⟨tops, bots, tl⟩
+  exact simplifyAux_correctness tops bots tl
 
 open Lean Meta in
 meta partial def reify (e : Expr) : MetaM (List TseitinGen) := do
@@ -177,9 +286,9 @@ meta instance : ToExpr TseitinGen where
   toTypeExpr := mkConst ``TseitinGen
 
 private meta def Compressed.beq : Compressed → Compressed → Bool
-  | ⟨hT₁, hB₁, []⟩, ⟨hT₂, hB₂, []⟩ => hT₁ == hT₂ && hB₁ == hB₂
-  | ⟨hT₁, hB₁, (t₁, b₁) :: tl₁⟩, ⟨hT₂, hB₂, (t₂, b₂) :: tl₂⟩ =>
-     hT₁ == hT₂ && hB₁ == hB₂ && Compressed.beq ⟨t₁, b₁, tl₁⟩ ⟨t₂, b₂, tl₂⟩
+  | ⟨tops₁, bots₁, []⟩, ⟨tops₂, bots₂, []⟩ => tops₁ == tops₂ && bots₁ == bots₂
+  | ⟨tops₁, bots₁, (t₁, b₁) :: tl₁⟩, ⟨tops₂, bots₂, (t₂, b₂) :: tl₂⟩ =>
+     tops₁ == tops₂ && bots₁ == bots₂ && Compressed.beq ⟨t₁, b₁, tl₁⟩ ⟨t₂, b₂, tl₂⟩
   | _, _ => false
 
 theorem simplify_normalise_proof {l₁ l₂ : List TseitinGen}

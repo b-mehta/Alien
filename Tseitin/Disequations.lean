@@ -17,25 +17,32 @@ public section negative
   | .A' => A
   | .B' => B
   | .X' => X
-  | .mul x y => liftAux a b A B X x * liftAux a b A B X y
 
-def lift {α : Type*} [Semigroup α] (a b A B X : α)
+@[expose] def lift {α : Type*} [Semigroup α] (a b A B X : α)
     (h1 : A * a = a * A) (h2 : A * b = b * A) (h3 : B * a = a * B) (h4 : B * b = b * B)
     (h5 : (X * a) * A = A * X) (h6 : (X * b) * B = B * X) (h7 : ((a * A) * A) * X = (a * A) * A) :
-    Tseitin → α := Quot.lift (liftAux a b A B X) fun x y h ↦ by
-  induction h with try simpa
-  | assoc x y z => simp [_root_.mul_assoc]
-  | lcongr x y z _ ih => simp [ih]
-  | rcongr x y z _ ih => simp [ih]
+    Tseitin → α := Quot.lift (FreeSemigroup.lift (liftAux a b A B X)) fun x y h ↦ by
+  apply TseitinRel.inductionOn h <;> simp +contextual [*]
 
-def heavies : Tseitin → FreeMonoid Bool :=
-  lift 1 1 (.of true) (.of false) 1
+@[simp] lemma lift_a {α : Type*} [Semigroup α] {a b A B X : α} {h1 h2 h3 h4 h5 h6 h7} :
+    lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.a = a := rfl
+@[simp] lemma lift_b {α : Type*} [Semigroup α] {a b A B X : α} {h1 h2 h3 h4 h5 h6 h7} :
+    lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.b = b := rfl
+@[simp] lemma lift_A {α : Type*} [Semigroup α] {a b A B X : α} {h1 h2 h3 h4 h5 h6 h7} :
+    lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.A = A := rfl
+@[simp] lemma lift_B {α : Type*} [Semigroup α] {a b A B X : α} {h1 h2 h3 h4 h5 h6 h7} :
+    lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.B = B := rfl
+@[simp] lemma lift_X {α : Type*} [Semigroup α] {a b A B X : α} {h1 h2 h3 h4 h5 h6 h7} :
+    lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.X = X := rfl
+
+def heavies : Tseitin → FreeMonoid Cell :=
+  lift 1 1 (.of .a) (.of .b) 1
     (by simp) (by simp) (by simp) (by simp) (by simp) (by simp) (by simp)
 
 lemma A_ne_B : A ≠ B := by
   intro h
   have := congr(heavies $h)
-  simp [heavies, lift, A, B] at this
+  simp [heavies] at this
   grind [FreeMonoid.of_injective]
 
 def leftMost : Tseitin → Matrix (Fin 2) (Fin 2) ℤ :=

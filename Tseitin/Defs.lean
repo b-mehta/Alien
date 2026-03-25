@@ -27,9 +27,44 @@ inductive Cell | a | b deriving Repr, DecidableEq
   | .a => .A'
   | .b => .B'
 
+@[simp] lemma Cell.asTop_a : Cell.asTop .a = .a' := rfl
+@[simp] lemma Cell.asTop_b : Cell.asTop .b = .b' := rfl
+@[simp] lemma Cell.asBot_a : Cell.asBot .a = .A' := rfl
+@[simp] lemma Cell.asBot_b : Cell.asBot .b = .B' := rfl
+
 end
 
 def embed {α : Type*} : FreeSemigroup α →ₙ* FreeMonoid α := FreeSemigroup.lift .of
+@[simp, grind =] lemma embed_of {α : Type*} (x : α) : embed (.of x) = .of x := by
+  rw [embed, FreeSemigroup.lift_of]
+
+lemma embed_eq_cons {α : Type*} (x : α) (xs : List α) :
+    embed ⟨x, xs⟩ = FreeMonoid.ofList (x :: xs) := by
+  simp only [embed, FreeSemigroup.lift, Equiv.coe_fn_mk, MulHom.coe_mk, FreeMonoid.ofList_cons]
+  rw [← List.foldl_map]
+  generalize FreeMonoid.of x = x
+  induction xs generalizing x with
+  | nil => simp
+  | cons head tail ih =>
+    simp only [List.map_cons, List.foldl_cons, FreeMonoid.ofList_cons]
+    simp [ih, mul_assoc]
+
+lemma embed_injective {α : Type*} : Function.Injective (@embed α) := by
+  rintro ⟨x, xs⟩ ⟨y, ys⟩ h
+  simp only [embed_eq_cons, Equiv.apply_eq_iff_eq] at h
+  simpa using h
+
+lemma eq_one_or_embed {α : Type*} (x : FreeMonoid α) : x = 1 ∨ ∃ y, embed y = x := by
+  induction x with
+  | one => simp
+  | of x => exact Or.inr ⟨.of x, by simp⟩
+  | mul x y hx hy =>
+    obtain rfl | ⟨x', hx'⟩ := hx <;>
+    obtain rfl | ⟨y', hy'⟩ := hy
+    · simp
+    · exact Or.inr ⟨y', by simp [hy']⟩
+    · exact Or.inr ⟨x', by simp [hx']⟩
+    · exact Or.inr ⟨x' * y', by simp [hx', hy']⟩
 
 open FreeMonoid in
 inductive TseitinMonoidRel : FreeMonoid TseitinGen → FreeMonoid TseitinGen → Prop
@@ -37,14 +72,86 @@ inductive TseitinMonoidRel : FreeMonoid TseitinGen → FreeMonoid TseitinGen →
   | ad_comm : TseitinMonoidRel (of B' * of a') (of a' * of B')
   | bc_comm : TseitinMonoidRel (of A' * of b') (of b' * of A')
   | bd_comm : TseitinMonoidRel (of B' * of b') (of b' * of B')
-  | ea_swap : TseitinMonoidRel ((of X' * of a') * of A') (of A' * of X')
-  | eb_swap : TseitinMonoidRel ((of X' * of b') * of B') (of B' * of X')
-  | acce : TseitinMonoidRel (((of a' * of A') * of A') * of X') ((of a' * of A') * of A')
+  | ea_swap : TseitinMonoidRel (of X' * of a' * of A') (of A' * of X')
+  | eb_swap : TseitinMonoidRel (of X' * of b' * of B') (of B' * of X')
+  | acce : TseitinMonoidRel (of a' * of A' * of A' * of X') (of a' * of A' * of A')
   | lcongr (x y z : FreeMonoid TseitinGen) : TseitinMonoidRel x y → TseitinMonoidRel (x * z) (y * z)
   | rcongr (x y z : FreeMonoid TseitinGen) : TseitinMonoidRel y z → TseitinMonoidRel (x * y) (x * z)
 
-def TseitinRel : FreeSemigroup TseitinGen → FreeSemigroup TseitinGen → Prop :=
+lemma TseitinMonoidRel.ne_one {x y : FreeMonoid TseitinGen} (h : TseitinMonoidRel x y) :
+    x ≠ 1 ∧ y ≠ 1 := by
+  induction h with simp [← FreeMonoid.length_eq_zero, *]
+
+@[expose] def TseitinRel : FreeSemigroup TseitinGen → FreeSemigroup TseitinGen → Prop :=
   fun x y ↦ TseitinMonoidRel (embed x) (embed y)
+
+open FreeSemigroup in
+lemma TseitinRel.inductionOn {motive : FreeSemigroup TseitinGen → FreeSemigroup TseitinGen → Prop}
+    {x y : FreeSemigroup TseitinGen} (h : TseitinRel x y)
+    (ac_comm : motive (of A' * of a') (of a' * of A'))
+    (ad_comm : motive (of B' * of a') (of a' * of B'))
+    (bc_comm : motive (of A' * of b') (of b' * of A'))
+    (bd_comm : motive (of B' * of b') (of b' * of B'))
+    (ea_swap : motive (of X' * of a' * of A') (of A' * of X'))
+    (eb_swap : motive (of X' * of b' * of B') (of B' * of X'))
+    (acce : motive (of a' * of A' * of A' * of X') (of a' * of A' * of A'))
+    (lcongr : ∀ x y z : FreeSemigroup TseitinGen, motive x y → motive (x * z) (y * z))
+    (rcongr : ∀ x y z : FreeSemigroup TseitinGen, motive y z → motive (x * y) (x * z)) :
+    motive x y := by
+  rw [TseitinRel] at h
+  generalize hx' : embed x = x' at h
+  generalize hy' : embed y = y' at h
+  induction h generalizing x y with
+  | ac_comm =>
+    have hx : x = of A' * of a' := embed_injective (by simp [hx'])
+    have hy : y = of a' * of A' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | ad_comm =>
+    have hx : x = of B' * of a' := embed_injective (by simp [hx'])
+    have hy : y = of a' * of B' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | bc_comm =>
+    have hx : x = of A' * of b' := embed_injective (by simp [hx'])
+    have hy : y = of b' * of A' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | bd_comm =>
+    have hx : x = of B' * of b' := embed_injective (by simp [hx'])
+    have hy : y = of b' * of B' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | ea_swap =>
+    have hx : x = of X' * of a' * of A' := embed_injective (by simp [hx'])
+    have hy : y = of A' * of X' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | eb_swap =>
+    have hx : x = of X' * of b' * of B' := embed_injective (by simp [hx'])
+    have hy : y = of B' * of X' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | acce =>
+    have hx : x = of a' * of A' * of A' * of X' := embed_injective (by simp [hx'])
+    have hy : y = of a' * of A' * of A' := embed_injective (by simp [hy'])
+    rwa [hx, hy]
+  | lcongr x'' y'' z'' h ih =>
+    obtain rfl | ⟨x'', rfl⟩ := eq_one_or_embed x''
+    · simpa using h.ne_one
+    obtain rfl | ⟨y'', rfl⟩ := eq_one_or_embed y''
+    · simpa using h.ne_one
+    obtain rfl | ⟨z'', rfl⟩ := eq_one_or_embed z''
+    · grind
+    rw [← map_mul, embed_injective.eq_iff] at hx' hy'
+    simp only [embed_injective.eq_iff, forall_eq_apply_imp_iff, forall_eq] at ih
+    rw [hx', hy']
+    exact lcongr _ _ _ ih
+  | rcongr x'' y'' z'' h ih =>
+    obtain rfl | ⟨y'', rfl⟩ := eq_one_or_embed y''
+    · simpa using h.ne_one
+    obtain rfl | ⟨z'', rfl⟩ := eq_one_or_embed z''
+    · simpa using h.ne_one
+    obtain rfl | ⟨x'', rfl⟩ := eq_one_or_embed x''
+    · grind
+    rw [← map_mul, embed_injective.eq_iff] at hx' hy'
+    simp only [embed_injective.eq_iff, forall_eq_apply_imp_iff, forall_eq] at ih
+    rw [hx', hy']
+    exact rcongr _ _ _ ih
 
 @[expose] public def Tseitin : Type := Quot TseitinRel
 
