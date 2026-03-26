@@ -153,13 +153,13 @@ lemma TseitinRel.inductionOn {motive : FreeSemigroup TseitinGen → FreeSemigrou
     rw [hx', hy']
     exact rcongr _ _ _ ih
 
-@[expose] public def Tseitin : Type := Quot TseitinRel
+def Tseitin : Type := Quot TseitinRel
 
 namespace Tseitin
 
 open FreeSemigroup
 
-@[expose] def mk : TseitinGen → Tseitin := Quot.mk _ ∘ of
+def mk : TseitinGen → Tseitin := Quot.mk _ ∘ of
 
 @[expose, match_pattern] def a : Tseitin := mk a'
 @[expose, match_pattern] def b : Tseitin := mk b'
@@ -173,18 +173,84 @@ open FreeSemigroup
 @[simp] lemma mk_B' : mk B' = B := rfl
 @[simp] lemma mk_X' : mk X' = X := rfl
 
-@[expose] def mul : Tseitin → Tseitin → Tseitin :=
-    .map₂ (· * ·)
-    (fun _ _ _ h ↦ by simpa [TseitinRel] using h.rcongr _ _ _)
-    (fun _ _ _ h ↦ by simpa [TseitinRel] using h.lcongr _ _ _)
+def mul : Tseitin → Tseitin → Tseitin :=
+  Quot.map₂ (· * ·)
+  (fun _ _ _ h ↦ by simpa [TseitinRel] using h.rcongr _ _ _)
+  (fun _ _ _ h ↦ by simpa [TseitinRel] using h.lcongr _ _ _)
 
 lemma mul_assoc' (x y z : Tseitin) : mul x (mul y z) = mul (mul x y) z := by
   induction x, y, z using Quot.induction_on₃ with
   | h a b c => exact congrArg _ (mul_assoc _ _ _).symm
 
-@[expose] instance : Semigroup Tseitin where
+instance : Semigroup Tseitin where
   mul := Tseitin.mul
   mul_assoc _ _ _ := (mul_assoc' _ _ _).symm
+
+def toTseitin : FreeSemigroup TseitinGen →ₙ* Tseitin where
+  toFun := Quot.mk TseitinRel
+  map_mul' _ _ := rfl
+
+@[simp] lemma toTseitin_of (x : TseitinGen) : toTseitin (.of x) = mk x := by rfl
+
+def lift' {α : Sort*} (f : FreeSemigroup TseitinGen → α)
+    (h : ∀ (a b : FreeSemigroup TseitinGen), TseitinRel a b → f a = f b) :
+    Tseitin → α := Quot.lift f h
+
+@[simp] lemma lift'_toTseitin {α : Sort*} (f : FreeSemigroup TseitinGen → α)
+    (h : ∀ (a b : FreeSemigroup TseitinGen), TseitinRel a b → f a = f b)
+    (x : FreeSemigroup TseitinGen) :
+    lift' f h (toTseitin x) = f x := by
+  rfl
+
+@[elab_as_elim]
+lemma inductionOn' {motive : Tseitin → Prop} (x : Tseitin)
+    (h : ∀ x : FreeSemigroup TseitinGen, motive (toTseitin x)) :
+    motive x := Quot.inductionOn x h
+
+@[elab_as_elim]
+lemma inductionOn {motive : Tseitin → Prop} (x : Tseitin)
+    (a' : motive a) (b' : motive b) (A' : motive A) (B' : motive B) (X' : motive X)
+    (mul : ∀ x y, motive (mk x) → motive (toTseitin y) → motive (mk x * toTseitin y)) :
+    motive x :=
+  inductionOn' x <| fun x ↦ x.recOnMul (TseitinGen.rec a' b' A' B' X') <| by simp_all
+
+section
+
+variable {α : Type*}
+
+@[simp] private def liftGen [Mul α] (a b A B X : α) : TseitinGen → α
+  | .a' => a
+  | .b' => b
+  | .A' => A
+  | .B' => B
+  | .X' => X
+
+variable [Semigroup α] (a b A B X : α)
+
+private def liftAux
+    (h1 : A * a = a * A) (h2 : A * b = b * A) (h3 : B * a = a * B) (h4 : B * b = b * B)
+    (h5 : X * a * A = A * X) (h6 : X * b * B = B * X) (h7 : a * A * A * X = a * A * A) :
+    Tseitin → α := lift' (FreeSemigroup.lift (liftGen a b A B X)) fun x y h ↦ by
+  apply TseitinRel.inductionOn h <;> simp +contextual [*]
+
+def lift (h1 : A * a = a * A) (h2 : A * b = b * A) (h3 : B * a = a * B) (h4 : B * b = b * B)
+    (h5 : X * a * A = A * X) (h6 : X * b * B = B * X) (h7 : a * A * A * X = a * A * A) :
+    Tseitin →ₙ* α where
+  toFun := liftAux a b A B X h1 h2 h3 h4 h5 h6 h7
+  map_mul' x y := inductionOn' x fun x ↦ inductionOn' y fun y ↦ by
+    rw [liftAux]
+    simp [← map_mul, lift'_toTseitin]
+
+variable {h1 : A * a = a * A} {h2 : A * b = b * A} {h3 : B * a = a * B} {h4 : B * b = b * B}
+    {h5 : X * a * A = A * X} {h6 : X * b * B = B * X} {h7 : a * A * A * X = a * A * A}
+
+@[simp] lemma lift_a : lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.a = a := by rfl
+@[simp] lemma lift_b : lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.b = b := by rfl
+@[simp] lemma lift_A : lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.A = A := by rfl
+@[simp] lemma lift_B : lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.B = B := by rfl
+@[simp] lemma lift_X : lift a b A B X h1 h2 h3 h4 h5 h6 h7 Tseitin.X = X := by rfl
+
+end
 
 instance : CoeFun Tseitin (fun _ ↦ Tseitin → Tseitin) where
   coe x := HMul.hMul x

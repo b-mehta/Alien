@@ -1,1 +1,3 @@
-import ArtinTits.Basic
+module  -- shake: keep-all
+
+public import ArtinTits.Basic
