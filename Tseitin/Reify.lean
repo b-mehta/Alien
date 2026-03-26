@@ -11,19 +11,32 @@ open TseitinGen
 set_option linter.style.setOption false
 set_option pp.coercions false
 
+/-- A `Compressed` value represents the normal form of a `List TseitinGen`.
+The list is split into *segments* separated by `X`:
+
+  `headTop headBot X top₁ bot₁ X top₂ bot₂ X ...`
+
+where each `topᵢ`/`botᵢ` are lists of `Cell`s.  Within each segment, all top
+generators (lowercase: `a`, `b`) come before all bottom generators (uppercase:
+`A`, `B`), in the order induced by `mapPair`. -/
 public structure Compressed : Type where
+  /-- Top-row generators (lowercase) of the leading segment. -/
   headTop : List Cell
+  /-- Bottom-row generators (uppercase) of the leading segment. -/
   headBot : List Cell
+  /-- Remaining segments, each a `(top, bot)` pair following an `X`. -/
   tail : List (List Cell × List Cell)
 deriving BEq
 
 open Compressed
 
+/-- Interleave two `Cell` lists as generators: tops first, then bots. -/
 @[expose] public def mapPair (a b : List Cell) : List TseitinGen :=
   a.map Cell.asTop ++ b.map Cell.asBot
 
 @[simp] lemma mapPair_nil_nil : mapPair [] [] = [] := rfl
 
+/-- Flatten a `Compressed` value back to a `List TseitinGen`, inserting `X'` between segments. -/
 @[expose] public def Compressed.toList : Compressed → List TseitinGen
   | ⟨tops, bots, []⟩ => mapPair tops bots
   | ⟨tops, bots, (top, bot) :: tail⟩ => mapPair tops bots ++ .X' :: toList ⟨top, bot, tail⟩
@@ -43,16 +56,18 @@ open Compressed
   · simp_all
   · rw [toList]; simp
 
+/-- Evaluate a `List TseitinGen` as a product in `Tseitin`.  The empty list
+evaluates to `X` as a junk value. -/
 @[expose] public def denote : List TseitinGen → Tseitin
   | [] => X
   | x :: xs => xs.foldl (init := mk x) (fun acc g => acc * mk g)
 
-private lemma foldl_mul_left (a b : Tseitin) (l : List TseitinGen) :
+lemma foldl_mul_left (a b : Tseitin) (l : List TseitinGen) :
     l.foldl (init := a * b) (fun acc g => acc * mk g) =
     a * l.foldl (init := b) (fun acc g => acc * mk g) := by
   induction l generalizing b with
   | nil => rfl
-  | cons x l ih => simp only [List.foldl_cons, _root_.mul_assoc, ih]
+  | cons x l ih => simp [← mul_assoc, ih]
 
 @[simp, grind =] lemma denote_singleton (x : TseitinGen) : denote [x] = mk x := rfl
 
@@ -67,8 +82,7 @@ lemma denote_cons {x} {l : List TseitinGen} (h : l ≠ []) :
 @[simp] lemma toList_cons_top (c : Cell) (tops : List Cell) (bots : List Cell)
     (tl : List (List Cell × List Cell)) :
     toList ⟨c :: tops, bots, tl⟩ = Cell.asTop c :: toList ⟨tops, bots, tl⟩ := by
-  rcases tl with _ | ⟨⟨top, bot⟩, tl⟩ <;>
-    simp only [Compressed.toList, mapPair, List.map_cons, List.cons_append]
+  rcases tl with _ | ⟨⟨top, bot⟩, tl⟩ <;> simp [Compressed.toList, mapPair]
 
 @[simp] lemma toList_nil_nil_cons (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
     toList ⟨[], [], (tops, bots) :: tl⟩ = X' :: toList ⟨tops, bots, tl⟩ := by
@@ -79,7 +93,7 @@ lemma top_bot_comm (t c : Cell) :
   rcases t <;> rcases c
   exacts [ac_comm.symm, ad_comm.symm, bc_comm.symm, bd_comm.symm]
 
-private lemma mk_mul_comm_denote (t c : Cell) (l : List TseitinGen) :
+lemma mk_mul_comm_denote (t c : Cell) (l : List TseitinGen) :
     mk (Cell.asTop t) * denote (Cell.asBot c :: l) =
     mk (Cell.asBot c) * denote (Cell.asTop t :: l) := by
   cases l with
@@ -97,14 +111,14 @@ lemma denote_bot_comm_tops (c : Cell) (tops : List Cell) (rest : List TseitinGen
     conv_rhs => rw [denote_cons (List.cons_ne_nil _ _)]
     exact mk_mul_comm_denote t c _
 
-@[simp] private lemma denote_toList_cons_bot (c : Cell) (tops bots : List Cell)
+@[simp] lemma denote_toList_cons_bot (c : Cell) (tops bots : List Cell)
     (tl : List (List Cell × List Cell)) :
     denote (toList ⟨tops, c :: bots, tl⟩) = denote (Cell.asBot c :: toList ⟨tops, bots, tl⟩) := by
   rcases tl with _ | ⟨⟨t, b⟩, rest⟩ <;>
     simp only [Compressed.toList, mapPair, List.map_cons, List.cons_append, List.append_assoc] <;>
     exact denote_bot_comm_tops c tops _
 
-private lemma denote_cons_congr (x : TseitinGen) {l₁ l₂ : List TseitinGen}
+lemma denote_cons_congr (x : TseitinGen) {l₁ l₂ : List TseitinGen}
     (h : denote l₁ = denote l₂) (he : l₁ = [] ↔ l₂ = []) :
     denote (x :: l₁) = denote (x :: l₂) := by
   rcases l₁ with _ | ⟨y, ys⟩
@@ -112,7 +126,7 @@ private lemma denote_cons_congr (x : TseitinGen) {l₁ l₂ : List TseitinGen}
   · have : l₂ ≠ [] := fun h' => List.cons_ne_nil y ys (he.mpr h')
     rw [denote_cons (List.cons_ne_nil _ _), denote_cons this, h]
 
-private lemma denote_append {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) (h₂ : l₂ ≠ []) :
+lemma denote_append {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) (h₂ : l₂ ≠ []) :
     denote (l₁ ++ l₂) = denote l₁ * denote l₂ := by
   induction l₁ with
   | nil => exact absurd rfl h₁
@@ -124,16 +138,16 @@ private lemma denote_append {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) (
       grind
 
 @[grind =]
-private lemma denote_cons_append {x : TseitinGen} {l₁ l₂ : List TseitinGen} (h₂ : l₂ ≠ []) :
+lemma denote_cons_append {x : TseitinGen} {l₁ l₂ : List TseitinGen} (h₂ : l₂ ≠ []) :
     denote (x :: l₁ ++ l₂) = denote (x :: l₁) * denote l₂ := by
   rw [denote_append (by simp) h₂]
 
 @[grind =]
-private lemma denote_append_cons {x : TseitinGen} {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) :
+lemma denote_append_cons {x : TseitinGen} {l₁ l₂ : List TseitinGen} (h₁ : l₁ ≠ []) :
     denote (l₁ ++ x :: l₂) = denote l₁ * denote (x :: l₂) := by
   rw [denote_append h₁ (List.cons_ne_nil _ _)]
 
-private lemma denote_tops_comm_bots (tops : List Cell) (bots : List Cell) (rest : List TseitinGen) :
+lemma denote_tops_comm_bots (tops : List Cell) (bots : List Cell) (rest : List TseitinGen) :
     denote (tops.map Cell.asTop ++ bots.map Cell.asBot ++ rest) =
     denote (bots.map Cell.asBot ++ tops.map Cell.asTop ++ rest) := by
   induction bots generalizing rest with
@@ -144,7 +158,7 @@ private lemma denote_tops_comm_bots (tops : List Cell) (bots : List Cell) (rest 
     have ih' := ih rest; simp only [List.append_assoc] at ih'
     exact denote_cons_congr _ ih' (by simp [List.append_eq_nil_iff]; tauto)
 
-private lemma denote_mapPair_mul_X {tops bots : List Cell}
+lemma denote_mapPair_mul_X {tops bots : List Cell}
     (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots) :
     denote (mapPair tops bots) * X = denote (mapPair tops bots) := by
   obtain ⟨tops', rfl⟩ := ha; obtain ⟨bots', rfl⟩ := haa
@@ -168,12 +182,12 @@ private lemma denote_mapPair_mul_X {tops bots : List Cell}
     rw [List.map_cons, denote_append_cons (by simp), ← mul_assoc]
     simp [denote, acce]
 
-private lemma denote_prefix_congr (pref : List TseitinGen) {l₁ l₂ : List TseitinGen}
+lemma denote_prefix_congr (pref : List TseitinGen) {l₁ l₂ : List TseitinGen}
     (h : denote l₁ = denote l₂) (he : l₁ = [] ↔ l₂ = []) :
     denote (pref ++ l₁) = denote (pref ++ l₂) := by
   cases pref with grind
 
-private lemma denote_mapPair_merge {tops top bots bot : List Cell} (rest : List TseitinGen) :
+lemma denote_mapPair_merge {tops top bots bot : List Cell} (rest : List TseitinGen) :
     denote (mapPair (tops ++ top) (bots ++ bot) ++ rest) =
     denote (mapPair tops bots ++ mapPair top bot ++ rest) := by
   simp only [mapPair, List.map_append, List.append_assoc]
@@ -181,13 +195,13 @@ private lemma denote_mapPair_merge {tops top bots bot : List Cell} (rest : List 
   · simpa using denote_tops_comm_bots top bots (bot.map Cell.asBot ++ rest)
   · grind [List.append_eq_nil_iff]
 
-private lemma denote_X_absorb {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
+lemma denote_X_absorb {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
     (rest : List TseitinGen) :
     denote (mapPair tops bots ++ X' :: rest) = denote (mapPair tops bots ++ rest) := by
   have hne : mapPair tops bots ≠ [] := by obtain ⟨_, rfl⟩ := ha; simp [mapPair]
   cases rest with simp [denote_append_cons, denote_mapPair_mul_X, *]
 
-private lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
+lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
     (top bot : List Cell) (tl : List (List Cell × List Cell)) :
     denote (toList ⟨tops ++ top, bots ++ bot, tl⟩) =
     denote (toList ⟨tops, bots, (top, bot) :: tl⟩) := by
@@ -197,6 +211,8 @@ private lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa :
   · simp [toList, denote_X_absorb ha haa]
     simpa using denote_mapPair_merge (X' :: toList ⟨t2, b2, tl'⟩)
 
+/-- Normalise a `List TseitinGen` into `Compressed` form by scanning right-to-left:
+`X` starts a new segment, lowercase generators go into `headTop`, uppercase into `headBot`. -/
 @[expose] public def normalise : List TseitinGen → Compressed :=
   List.foldr (init := ⟨[], [], []⟩) <| fun
   | .X', ⟨tops, bots, xs⟩ => ⟨[], [], (tops, bots) :: xs⟩
@@ -229,6 +245,7 @@ private lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa :
   | .A' => toList_ne_empty_of_bot (by simp)
   | .B' => toList_ne_empty_of_bot (by simp)
 
+/-- The normalised form evaluates to the same element as the original list. -/
 public theorem normalise_correctness :
     ∀ l : List TseitinGen, denote (normalise l).toList = denote l := by
   intro l
@@ -239,6 +256,9 @@ public theorem normalise_correctness :
     | nil => cases x <;> simp [toList, mapPair]
     | cons y l' => cases x <;> simp [denote_cons normalise_cons_ne_empty, ih]
 
+/-- Worker for `simplify`.  Merges the current segment `(tops, bots)` with the next one
+when the current segment ends with `a … aA A` (i.e. `[.a] <:+ tops` and `[.a,.a] <:+ bots`),
+because in that case `X` is absorbed.  Recurses until no further merging is possible. -/
 @[expose] public def simplifyAux (tops bots : List Cell) :
     List (List Cell × List Cell) → Compressed
   | [] => ⟨tops, bots, []⟩
@@ -249,10 +269,11 @@ public theorem normalise_correctness :
       let r := simplifyAux top bot tl
       ⟨tops, bots, (r.headTop, r.headBot) :: r.tail⟩
 
+/-- Simplify a `Compressed` value by merging segments where `X` is absorbed. -/
 @[expose] public def simplify (c : Compressed) : Compressed :=
   simplifyAux c.headTop c.headBot c.tail
 
-private lemma simplifyAux_toList_ne_nil (tops bots : List Cell)
+lemma simplifyAux_toList_ne_nil (tops bots : List Cell)
     (tl : List (List Cell × List Cell)) (htl : tl ≠ []) :
     (simplifyAux tops bots tl).toList ≠ [] := by
   induction tl generalizing tops bots with
@@ -274,7 +295,7 @@ private lemma simplifyAux_toList_ne_nil (tops bots : List Cell)
         cases simplifyAux top bot tl; rfl
       simp [Compressed.toList, hr] at h
 
-private lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
+lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
     denote (simplifyAux tops bots tl).toList = denote (toList ⟨tops, bots, tl⟩) := by
   induction tl generalizing tops bots with
   | nil => rfl
@@ -301,11 +322,14 @@ private lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List C
       apply denote_prefix_congr (mapPair tops bots) _ ⟨by simp, by simp⟩
       exact denote_cons_congr X' (ih top bot) h_iff
 
+/-- Simplification preserves the denotation. -/
 public lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c.toList := by
   intro ⟨tops, bots, tl⟩
   exact simplifyAux_correctness tops bots tl
 
--- matchPrefix: extract longest common prefix of tops and bots (element-wise)
+/-- Extract the longest common element-wise prefix of two `Cell` lists, returning
+`(matched, remTops, remBots)` such that `tops = matched ++ remTops`
+and `bots = matched ++ remBots`. -/
 @[expose] public def matchPrefix : List Cell → List Cell → List Cell × List Cell × List Cell
   | c :: tops, c' :: bots =>
     if c = c' then
@@ -314,7 +338,7 @@ public lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c
     else ([], c :: tops, c' :: bots)
   | tops, bots => ([], tops, bots)
 
-private lemma matchPrefix_tops (tops bots : List Cell) :
+lemma matchPrefix_tops (tops bots : List Cell) :
     tops = (matchPrefix tops bots).1 ++ (matchPrefix tops bots).2.1 := by
   induction tops generalizing bots with
   | nil => simp [matchPrefix]
@@ -326,7 +350,7 @@ private lemma matchPrefix_tops (tops bots : List Cell) :
       · next h => subst h; simpa using ih bots'
       · simp
 
-private lemma matchPrefix_bots (tops bots : List Cell) :
+lemma matchPrefix_bots (tops bots : List Cell) :
     bots = (matchPrefix tops bots).1 ++ (matchPrefix tops bots).2.2 := by
   induction tops generalizing bots with
   | nil => simp [matchPrefix]
@@ -338,7 +362,9 @@ private lemma matchPrefix_bots (tops bots : List Cell) :
       · next h => subst h; simpa using ih bots'
       · simp
 
--- moveX: push X rightward by consuming matched top/bot pairs via ea_swap/eb_swap
+/-- Worker for `moveX`. For each `X` boundary, push it rightward past any common prefix
+of the adjacent top/bot lists using the `ea`/`eb` swap axioms, absorbing matched pairs
+into the preceding segment's `headBot`. -/
 @[expose] public def moveXAux (headTop headBot : List Cell) :
     List (List Cell × List Cell) → Compressed
   | [] => ⟨headTop, headBot, []⟩
@@ -347,14 +373,15 @@ private lemma matchPrefix_bots (tops bots : List Cell) :
     let r := moveXAux remTops remBots tl
     ⟨headTop, headBot ++ matched, (r.headTop, r.headBot) :: r.tail⟩
 
+/-- Push each `X` rightward past matching top/bot pairs via `ea`/`eb` swap axioms. -/
 @[expose] public def moveX (c : Compressed) : Compressed :=
   moveXAux c.headTop c.headBot c.tail
 
-private lemma mapPair_append_bots (tops bots extra : List Cell) :
+lemma mapPair_append_bots (tops bots extra : List Cell) :
     mapPair tops (bots ++ extra) = mapPair tops bots ++ extra.map Cell.asBot := by
   simp [mapPair, List.map_append, List.append_assoc]
 
-private lemma X_cell_swap (c : Cell) (rest : List TseitinGen) :
+lemma X_cell_swap (c : Cell) (rest : List TseitinGen) :
     denote (X' :: Cell.asTop c :: Cell.asBot c :: rest) = denote (Cell.asBot c :: X' :: rest) := by
   cases rest with
   | nil => cases c <;> [exact ea_swap; exact eb_swap]
@@ -364,7 +391,7 @@ private lemma X_cell_swap (c : Cell) (rest : List TseitinGen) :
     · rw [← _root_.mul_assoc, ← _root_.mul_assoc, ea_swap, _root_.mul_assoc]
     · rw [← _root_.mul_assoc, ← _root_.mul_assoc, eb_swap, _root_.mul_assoc]
 
-private lemma denote_matchPrefix_swap (matched remTops remBots : List Cell)
+lemma denote_matchPrefix_swap (matched remTops remBots : List Cell)
     (rest : List TseitinGen) :
     denote (X' :: mapPair (matched ++ remTops) (matched ++ remBots) ++ rest) =
     denote (matched.map Cell.asBot ++ X' :: mapPair remTops remBots ++ rest) := by
@@ -386,7 +413,7 @@ private lemma denote_matchPrefix_swap (matched remTops remBots : List Cell)
     simp only [mapPair, List.map_append, List.append_assoc, List.cons_append] at h4
     exact denote_cons_congr (Cell.asBot c) h4 (by simp [List.append_eq_nil_iff])
 
-private lemma moveXAux_toList_eq_nil (hTop hBot : List Cell)
+lemma moveXAux_toList_eq_nil (hTop hBot : List Cell)
     (tl : List (List Cell × List Cell)) :
     (moveXAux hTop hBot tl).toList = [] ↔ toList ⟨hTop, hBot, tl⟩ = [] := by
   induction tl generalizing hTop hBot with
@@ -396,7 +423,7 @@ private lemma moveXAux_toList_eq_nil (hTop hBot : List Cell)
     simp only [moveXAux, Compressed.toList, mapPair_append_bots]
     constructor <;> (intro h; simp at h)
 
-private lemma moveXAux_correctness (headTop headBot : List Cell)
+lemma moveXAux_correctness (headTop headBot : List Cell)
     (tl : List (List Cell × List Cell)) :
     denote (moveXAux headTop headBot tl).toList = denote (toList ⟨headTop, headBot, tl⟩) := by
   induction tl generalizing headTop headBot with
@@ -427,27 +454,55 @@ private lemma moveXAux_correctness (headTop headBot : List Cell)
         simpa [List.append_assoc] using this
     · simp
 
+/-- Moving `X` rightward preserves the denotation. -/
 public lemma moveX_correctness : ∀ c : Compressed,
     denote (moveX c).toList = denote c.toList := by
   intro ⟨tops, bots, tl⟩
   exact moveXAux_correctness tops bots tl
 
-open Lean in
-def genToExpr : TseitinGen → Expr
-  | .a' => mkConst ``Tseitin.a
-  | .b' => mkConst ``Tseitin.b
-  | .A' => mkConst ``Tseitin.A
-  | .B' => mkConst ``Tseitin.B
-  | .X' => mkConst ``Tseitin.X
+open Lean Meta Elab Tactic
 
-open Lean Meta in
-def unreify (l : List TseitinGen) : MetaM Expr :=
+/-- `ToExpr` instance for `TseitinGen`, used when building proof terms by reflection. -/
+instance : ToExpr TseitinGen where
+  toExpr
+    | .a' => mkConst ``TseitinGen.a'
+    | .b' => mkConst ``TseitinGen.b'
+    | .A' => mkConst ``TseitinGen.A'
+    | .B' => mkConst ``TseitinGen.B'
+    | .X' => mkConst ``TseitinGen.X'
+  toTypeExpr := mkConst ``TseitinGen
+
+open Qq in
+/-- Map a `TseitinGen` to its corresponding quoted `Tseitin` generator expression. -/
+def genToExpr : TseitinGen → Q(Tseitin)
+  | .a' => q(a)
+  | .b' => q(b)
+  | .A' => q(A)
+  | .B' => q(B)
+  | .X' => q(X)
+
+open Qq in
+/-- Convert a `List TseitinGen` to a quoted `Tseitin` product expression. -/
+def unreify (l : List TseitinGen) : MetaM Q(Tseitin) :=
   match l with
-  | [] => return mkConst ``Tseitin.X
-  | g :: gs => gs.foldlM (init := genToExpr g) fun acc g =>
-    mkAppM ``HMul.hMul #[acc, genToExpr g]
+  | [] => return q(X)
+  | g :: gs => gs.foldlM (init := genToExpr g) fun acc g => return q($acc * $(genToExpr g))
+
+open Qq in
+/-- Quoted `HMul` instance for `Tseitin`, used in `unreify'`. -/
+nonrec def hMul : Q(HMul Tseitin Tseitin Tseitin) := q(inferInstance)
+
+/-- Convert a `List TseitinGen` to a raw `Expr` product without `MetaM`. -/
+def unreify' (l : List TseitinGen) : Expr :=
+  match l with
+  | [] => mkConst ``Tseitin.X
+  | g :: gs => gs.foldl (init := genToExpr g) fun acc g =>
+    mkAppN (mkConst ``HMul.hMul)
+      #[mkConst ``Tseitin, mkConst ``Tseitin, mkConst ``Tseitin, hMul, acc, genToExpr g]
 
 open Lean Meta in
+/-- Parse a `Tseitin` product expression into a `List TseitinGen`,
+failing on unrecognised subterms. -/
 partial def reify (e : Expr) : MetaM (List TseitinGen) := do
   match_expr e with
   | HMul.hMul _ _ _ _ x y => return (← reify x) ++ (← reify y)
@@ -458,121 +513,91 @@ partial def reify (e : Expr) : MetaM (List TseitinGen) := do
   | Tseitin.X => return [.X']
   | _ => throwError "reify: unexpected Tseitin expression {e}"
 
-open Lean in
-instance : ToExpr TseitinGen where
-  toExpr
-    | .a' => mkConst ``TseitinGen.a'
-    | .b' => mkConst ``TseitinGen.b'
-    | .A' => mkConst ``TseitinGen.A'
-    | .B' => mkConst ``TseitinGen.B'
-    | .X' => mkConst ``TseitinGen.X'
-  toTypeExpr := mkConst ``TseitinGen
+/-- Normalise a single `Tseitin` expression, returning a `Simp.Result` containing the
+new expression and a proof `old = new`.  `compute` is the normalisation function;
+`extraStep` optionally names an additional `Compressed → Compressed` pass (e.g. `simplify`
+or `moveX`) and its correctness lemma, for proof-chain construction. -/
+public def normaliseExpr (e : Expr)
+    (compute : List TseitinGen → Compressed)
+    (extraStep : Option (Lean.Name × Lean.Name) := none) : MetaM Simp.Result := do
+  let raw ← reify e
+  let norm := (compute raw).toList
+  let rawExpr := toExpr raw
+  let normExpr := toExpr norm
+  let nc_raw := mkApp (mkConst ``normalise_correctness) rawExpr
+  let nc_norm := mkApp (mkConst ``normalise_correctness) normExpr
+  let proof ← match extraStep with
+  | none =>
+    let s ← mkAppM ``Eq.symm #[nc_raw]
+    mkAppM ``Eq.trans #[s, nc_norm]
+  | some (stepName, corrName) =>
+    let normC_raw := mkApp (mkConst ``normalise) rawExpr
+    let normC_norm := mkApp (mkConst ``normalise) normExpr
+    let xc_raw := mkApp (mkConst corrName) normC_raw
+    let xc_norm := mkApp (mkConst corrName) normC_norm
+    let tseitinTy := mkConst ``Tseitin
+    let xc_norm_nc_norm ← mkAppM ``Eq.trans #[xc_norm, nc_norm]
+    let xc_raw_s ← mkAppM ``Eq.symm #[xc_raw]
+    let denoteNormRaw := mkApp (mkConst ``denote)
+      (mkApp (mkConst ``Compressed.toList) normC_raw)
+    let denoteStepRaw := mkApp (mkConst ``denote)
+      (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst stepName) normC_raw))
+    let denoteNormExpr := mkApp (mkConst ``denote) normExpr
+    let mid := Lean.mkApp6 (mkConst ``Eq.trans [.succ .zero])
+      tseitinTy denoteNormRaw denoteStepRaw denoteNormExpr xc_raw_s xc_norm_nc_norm
+    let nc_raw_s ← mkAppM ``Eq.symm #[nc_raw]
+    mkAppM ``Eq.trans #[nc_raw_s, mid]
+  let newExpr ← unreify norm
+  return { expr := newExpr, proof? := some proof }
 
-theorem simplify_normalise_proof {l₁ l₂ : List TseitinGen}
-    (h : denote (simplify (normalise l₁)).toList = denote (simplify (normalise l₂)).toList) :
-    denote l₁ = denote l₂ := by
-  rw [← normalise_correctness (l := l₁), ← normalise_correctness (l := l₂),
-      ← simplify_correctness (normalise l₁), ← simplify_correctness (normalise l₂), h]
+/-- Conv mode: normalise the currently focused expression. -/
+def convNormalise (compute : List TseitinGen → Compressed)
+    (extraStep : Option (Lean.Name × Lean.Name) := none) : TacticM Unit := do
+  let lhs ← instantiateMVars (← Conv.getLhs)
+  Conv.applySimpResult (← normaliseExpr lhs compute extraStep)
 
-open Lean Meta Elab Tactic
-
-public def normTactic (goal : MVarId) : MetaM (Option MVarId) := do
+/-- Tactic mode: normalise both sides of an equality goal; close if they match, else rewrite. -/
+def eqTactic (goal : MVarId) (compute : List TseitinGen → Compressed)
+    (extraStep : Option (Lean.Name × Lean.Name) := none) : MetaM (Option MVarId) := do
   let goalType ← goal.getType'
-  let some (_, lhs, rhs) := goalType.eq? | throwError "tseitin_norm: goal is not an equality"
-  let raw₁ ← reify lhs
-  let raw₂ ← reify rhs
-  let raw₁Expr := toExpr raw₁
-  let raw₂Expr := toExpr raw₂
-  -- normalise_correctness : denote (normalise l).toList = denote l
-  let nc₁ := mkApp (mkConst ``normalise_correctness) raw₁Expr
-  let nc₂ := mkApp (mkConst ``normalise_correctness) raw₂Expr
-  -- new goal: denote (normalise raw₁).toList = denote (normalise raw₂).toList
-  let tseitinTy := mkConst ``Tseitin
-  let denoteNormLhs := mkApp (mkConst ``denote)
-    (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst ``normalise) raw₁Expr))
-  let denoteNormRhs := mkApp (mkConst ``denote)
-    (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst ``normalise) raw₂Expr))
-  let newGoalTy := mkApp3 (mkConst ``Eq [.succ .zero]) tseitinTy denoteNormLhs denoteNormRhs
-  -- Also build a nice (reduced) version for display
-  let niceNormLhs ← unreify (normalise raw₁).toList
-  let niceNormRhs ← unreify (normalise raw₂).toList
-  let niceGoalTy := mkApp3 (mkConst ``Eq [.succ .zero]) tseitinTy niceNormLhs niceNormRhs
-  if normalise raw₁ == normalise raw₂ then
-    -- Close by chaining nc₁.symm ∘ nc₂
-    let symm₁ ← mkAppM ``Eq.symm #[nc₁]
-    let proof ← mkAppM ``Eq.trans #[symm₁, nc₂]
+  let some (_, lhs, rhs) := goalType.eq? | throwError "goal is not an equality"
+  let rLhs ← normaliseExpr lhs compute extraStep
+  let rRhs ← normaliseExpr rhs compute extraStep
+  if rLhs.expr == rRhs.expr then
+    -- Both sides normalise to the same thing: close with proofLhs.trans proofRhs.symm
+    let proofRhsSymm ← mkAppM ``Eq.symm #[rRhs.proof?.get!]
+    let proof ← mkAppM ``Eq.trans #[rLhs.proof?.get!, proofRhsSymm]
     goal.assign proof
     return none
   else
-    -- Change goal to the normalised form
+    -- Change goal to newLhs = newRhs
+    let tseitinTy := mkConst ``Tseitin
+    let newGoalTy := mkApp3 (mkConst ``Eq [.succ .zero]) tseitinTy rLhs.expr rRhs.expr
     let newGoalMVar ← mkFreshExprMVar newGoalTy
-    let nc₁s ← mkAppM ``Eq.symm #[nc₁]
-    let proof ← mkAppM ``Eq.trans #[nc₁s, ← mkAppM ``Eq.trans #[newGoalMVar, nc₂]]
+    let proofRhsSymm ← mkAppM ``Eq.symm #[rRhs.proof?.get!]
+    let proof ← mkAppM ``Eq.trans
+      #[rLhs.proof?.get!, ← mkAppM ``Eq.trans #[newGoalMVar, proofRhsSymm]]
     goal.assign proof
-    -- Replace the goal type with the reduced (nice) version for display
-    let niceGoal ← newGoalMVar.mvarId!.replaceTargetDefEq niceGoalTy
-    return some niceGoal
+    return some newGoalMVar.mvarId!
 
-public def createTactic (goal : MVarId) : MetaM Unit := do
-  let goalType ← goal.getType'
-  let some (_, lhs, rhs) := goalType.eq? | throwError "create: goal is not an equality"
-  let raw₁ ← reify lhs
-  let raw₂ ← reify rhs
-  unless simplify (normalise raw₁) == simplify (normalise raw₂) do
-    throwError "create: simplified normal forms differ"
-  let raw₁Expr := toExpr raw₁
-  let raw₂Expr := toExpr raw₂
-  let norm₁ := mkApp (mkConst ``normalise) raw₁Expr
-  let norm₂ := mkApp (mkConst ``normalise) raw₂Expr
-  -- normalise_correctness : denote (normalise l).toList = denote l
-  let nc₁ := mkApp (mkConst ``normalise_correctness) raw₁Expr
-  let nc₂ := mkApp (mkConst ``normalise_correctness) raw₂Expr
-  -- simplify_correctness : denote (simplify c).toList = denote c.toList
-  let sc₁ := mkApp (mkConst ``simplify_correctness) norm₁
-  let sc₂ := mkApp (mkConst ``simplify_correctness) norm₂
-  -- chain: nc₁.symm.trans (sc₁.symm.trans (sc₂.trans nc₂))
-  let tseitinTy := mkConst ``Tseitin
-  let sc₂_nc₂ ← mkAppM ``Eq.trans #[sc₂, nc₂]
-  let sc₁s ← mkAppM ``Eq.symm #[sc₁]
-  -- This trans needs kernel reduction of `simplify`, so build with raw mkApp
-  let denoteNorm₁ := mkApp (mkConst ``denote) (mkApp (mkConst ``Compressed.toList) norm₁)
-  let denoteSimp₁ := mkApp (mkConst ``denote)
-    (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst ``simplify) norm₁))
-  let denoteRaw₂ := mkApp (mkConst ``denote) raw₂Expr
-  let mid := Lean.mkApp6 (mkConst ``Eq.trans [.succ .zero])
-    tseitinTy denoteNorm₁ denoteSimp₁ denoteRaw₂ sc₁s sc₂_nc₂
-  let nc₁s ← mkAppM ``Eq.symm #[nc₁]
-  let proof ← mkAppM ``Eq.trans #[nc₁s, mid]
-  goal.assign proof
+/-- Tactic implementation for `norm`: reorder generators within each segment. -/
+public def normTactic (goal : MVarId) : MetaM (Option MVarId) :=
+  eqTactic goal normalise
+/-- Tactic implementation for `create`: additionally absorb `X` where possible. -/
+public def createTactic (goal : MVarId) : MetaM (Option MVarId) :=
+  eqTactic goal (simplify ∘ normalise) (some (``simplify, ``simplify_correctness))
+/-- Tactic implementation for `move`: additionally push `X` rightward via swap axioms. -/
+public def moveTactic (goal : MVarId) : MetaM (Option MVarId) :=
+  eqTactic goal (moveX ∘ normalise) (some (``moveX, ``moveX_correctness))
 
-public def moveTactic (goal : MVarId) : MetaM Unit := do
-  let goalType ← goal.getType'
-  let some (_, lhs, rhs) := goalType.eq? | throwError "move: goal is not an equality"
-  let raw₁ ← reify lhs
-  let raw₂ ← reify rhs
-  unless moveX (normalise raw₁) == moveX (normalise raw₂) do
-    throwError "move: normal forms after moveX differ"
-  let raw₁Expr := toExpr raw₁
-  let raw₂Expr := toExpr raw₂
-  let norm₁ := mkApp (mkConst ``normalise) raw₁Expr
-  let norm₂ := mkApp (mkConst ``normalise) raw₂Expr
-  let nc₁ := mkApp (mkConst ``normalise_correctness) raw₁Expr
-  let nc₂ := mkApp (mkConst ``normalise_correctness) raw₂Expr
-  let mc₁ := mkApp (mkConst ``moveX_correctness) norm₁
-  let mc₂ := mkApp (mkConst ``moveX_correctness) norm₂
-  let tseitinTy := mkConst ``Tseitin
-  -- Chain: nc₁⁻¹ ∘ mc₁⁻¹ ∘ [kernel rfl] ∘ mc₂ ∘ nc₂
-  let mc₂_nc₂ ← mkAppM ``Eq.trans #[mc₂, nc₂]
-  let mc₁s ← mkAppM ``Eq.symm #[mc₁]
-  let denoteNorm₁ := mkApp (mkConst ``denote)
-    (mkApp (mkConst ``Compressed.toList) norm₁)
-  let denoteMoveX₁ := mkApp (mkConst ``denote)
-    (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst ``moveX) norm₁))
-  let denoteRaw₂ := mkApp (mkConst ``denote) raw₂Expr
-  let mid := Lean.mkApp6 (mkConst ``Eq.trans [.succ .zero])
-    tseitinTy denoteNorm₁ denoteMoveX₁ denoteRaw₂ mc₁s mc₂_nc₂
-  let nc₁s ← mkAppM ``Eq.symm #[nc₁]
-  let proof ← mkAppM ``Eq.trans #[nc₁s, mid]
-  goal.assign proof
+/-- Conv implementation for `norm`. -/
+public def normConv : TacticM Unit :=
+  convNormalise normalise
+/-- Conv implementation for `create`. -/
+public def createConv : TacticM Unit :=
+  convNormalise (simplify ∘ normalise) (some (``simplify, ``simplify_correctness))
+/-- Conv implementation for `move`. -/
+public def moveConv : TacticM Unit :=
+  convNormalise (moveX ∘ normalise) (some (``moveX, ``moveX_correctness))
 
 end Tseitin

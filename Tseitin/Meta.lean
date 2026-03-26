@@ -9,9 +9,29 @@ section
 open Lean Meta Elab Tactic
 
 elab "norm" : tactic => liftMetaTactic1 normTactic
-elab "create" : tactic => liftMetaFinishingTactic createTactic
-elab "delete" : tactic => liftMetaFinishingTactic createTactic
-elab "move" : tactic => liftMetaFinishingTactic moveTactic
+elab "create" : tactic => liftMetaTactic1 createTactic
+elab "delete" : tactic => liftMetaTactic1 createTactic
+elab "move" : tactic => liftMetaTactic1 moveTactic
+
+elab "norm" : conv => normConv
+elab "create" : conv => createConv
+elab "delete" : conv => createConv
+elab "move" : conv => moveConv
+
+simproc_decl tseitin_norm (HMul.hMul (α := Tseitin) _ _) := fun e => do
+  let r ← normaliseExpr e normalise
+  if r.expr == e then return .continue
+  return .done r
+
+simproc_decl tseitin_create (HMul.hMul (α := Tseitin) _ _) := fun e => do
+  let r ← normaliseExpr e (simplify ∘ normalise) (some (``simplify, ``simplify_correctness))
+  if r.expr == e then return .continue
+  return .done r
+
+simproc_decl tseitin_move (HMul.hMul (α := Tseitin) _ _) := fun e => do
+  let r ← normaliseExpr e (moveX ∘ normalise) (some (``moveX, ``moveX_correctness))
+  if r.expr == e then return .continue
+  return .done r
 
 end
 
@@ -50,5 +70,29 @@ example : a A A = a A A := by create
 -- Deep tail: multiple non-matching heads before a simplifiable block
 example : b X b X a A A X = b X b X a A A := by create
 
+#guard_msgs (drop warning) in
 example : A a A X = A A a := by
+  norm
+  guard_target = a A A X = a A A
+  sorry
+
+#guard_msgs (drop warning) in
+example : A a A X = b := by
+  create
+  sorry
+
+#guard_msgs (drop warning) in
+example : A a A X = sorry := by
+  simp only [tseitin_norm]
+  guard_target = a A A X = _
+  simp only [tseitin_create]
+  guard_target = a A A = _
+  sorry
+
+#guard_msgs (drop warning) in
+example : A a A X = sorry := by
+  conv_lhs => norm
+  guard_target = a A A X = _
+  conv_lhs => create
+  guard_target = a A A = _
   sorry

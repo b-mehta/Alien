@@ -192,6 +192,8 @@ def toTseitin : FreeSemigroup TseitinGen →ₙ* Tseitin where
 
 @[simp] lemma toTseitin_of (x : TseitinGen) : toTseitin (.of x) = mk x := by rfl
 
+lemma toTseitin_surjective : Function.Surjective toTseitin := Quot.mk_surjective
+
 def lift' {α : Sort*} (f : FreeSemigroup TseitinGen → α)
     (h : ∀ (a b : FreeSemigroup TseitinGen), TseitinRel a b → f a = f b) :
     Tseitin → α := Quot.lift f h
@@ -213,6 +215,15 @@ lemma inductionOn {motive : Tseitin → Prop} (x : Tseitin)
     (mul : ∀ x y, motive (mk x) → motive (toTseitin y) → motive (mk x * toTseitin y)) :
     motive x :=
   inductionOn' x <| fun x ↦ x.recOnMul (TseitinGen.rec a' b' A' B' X') <| by simp_all
+
+@[ext]
+lemma extHom {β : Type*} [Semigroup β] {f g : Tseitin →ₙ* β}
+    (h : ∀ x : TseitinGen, f (mk x) = g (mk x)) : f = g := by
+  ext x
+  induction x using inductionOn' with | h x =>
+  induction x with
+  | ih1 x => exact h x
+  | ih2 x y hx hy => simp_all
 
 section
 
