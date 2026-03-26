@@ -432,6 +432,21 @@ public lemma moveX_correctness : ∀ c : Compressed,
   intro ⟨tops, bots, tl⟩
   exact moveXAux_correctness tops bots tl
 
+open Lean in
+def genToExpr : TseitinGen → Expr
+  | .a' => mkConst ``Tseitin.a
+  | .b' => mkConst ``Tseitin.b
+  | .A' => mkConst ``Tseitin.A
+  | .B' => mkConst ``Tseitin.B
+  | .X' => mkConst ``Tseitin.X
+
+open Lean Meta in
+def unreify (l : List TseitinGen) : MetaM Expr :=
+  match l with
+  | [] => return mkConst ``Tseitin.X
+  | g :: gs => gs.foldlM (init := genToExpr g) fun acc g =>
+    mkAppM ``HMul.hMul #[acc, genToExpr g]
+
 open Lean Meta in
 partial def reify (e : Expr) : MetaM (List TseitinGen) := do
   match_expr e with
@@ -461,17 +476,42 @@ theorem simplify_normalise_proof {l₁ l₂ : List TseitinGen}
 
 open Lean Meta Elab Tactic
 
-public def normTactic (goal : MVarId) : MetaM Unit := do
+public def normTactic (goal : MVarId) : MetaM (Option MVarId) := do
   let goalType ← goal.getType'
   let some (_, lhs, rhs) := goalType.eq? | throwError "tseitin_norm: goal is not an equality"
   let raw₁ ← reify lhs
   let raw₂ ← reify rhs
-  unless normalise raw₁ == normalise raw₂ do throwError "tseitin_norm: normal forms differ"
-  let nc₁ := mkApp (mkConst ``normalise_correctness) (toExpr raw₁)
-  let nc₂ := mkApp (mkConst ``normalise_correctness) (toExpr raw₂)
-  let symm₁ ← mkAppM ``Eq.symm #[nc₁]
-  let proof ← mkAppM ``Eq.trans #[symm₁, nc₂]
-  goal.assign proof
+  let raw₁Expr := toExpr raw₁
+  let raw₂Expr := toExpr raw₂
+  -- normalise_correctness : denote (normalise l).toList = denote l
+  let nc₁ := mkApp (mkConst ``normalise_correctness) raw₁Expr
+  let nc₂ := mkApp (mkConst ``normalise_correctness) raw₂Expr
+  -- new goal: denote (normalise raw₁).toList = denote (normalise raw₂).toList
+  let tseitinTy := mkConst ``Tseitin
+  let denoteNormLhs := mkApp (mkConst ``denote)
+    (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst ``normalise) raw₁Expr))
+  let denoteNormRhs := mkApp (mkConst ``denote)
+    (mkApp (mkConst ``Compressed.toList) (mkApp (mkConst ``normalise) raw₂Expr))
+  let newGoalTy := mkApp3 (mkConst ``Eq [.succ .zero]) tseitinTy denoteNormLhs denoteNormRhs
+  -- Also build a nice (reduced) version for display
+  let niceNormLhs ← unreify (normalise raw₁).toList
+  let niceNormRhs ← unreify (normalise raw₂).toList
+  let niceGoalTy := mkApp3 (mkConst ``Eq [.succ .zero]) tseitinTy niceNormLhs niceNormRhs
+  if normalise raw₁ == normalise raw₂ then
+    -- Close by chaining nc₁.symm ∘ nc₂
+    let symm₁ ← mkAppM ``Eq.symm #[nc₁]
+    let proof ← mkAppM ``Eq.trans #[symm₁, nc₂]
+    goal.assign proof
+    return none
+  else
+    -- Change goal to the normalised form
+    let newGoalMVar ← mkFreshExprMVar newGoalTy
+    let nc₁s ← mkAppM ``Eq.symm #[nc₁]
+    let proof ← mkAppM ``Eq.trans #[nc₁s, ← mkAppM ``Eq.trans #[newGoalMVar, nc₂]]
+    goal.assign proof
+    -- Replace the goal type with the reduced (nice) version for display
+    let niceGoal ← newGoalMVar.mvarId!.replaceTargetDefEq niceGoalTy
+    return some niceGoal
 
 public def createTactic (goal : MVarId) : MetaM Unit := do
   let goalType ← goal.getType'

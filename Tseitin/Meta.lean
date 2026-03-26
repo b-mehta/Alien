@@ -8,7 +8,7 @@ section
 
 open Lean Meta Elab Tactic
 
-elab "norm" : tactic => liftMetaFinishingTactic Tseitin.normTactic
+elab "norm" : tactic => liftMetaTactic1 normTactic
 elab "create" : tactic => liftMetaFinishingTactic createTactic
 elab "delete" : tactic => liftMetaFinishingTactic createTactic
 elab "move" : tactic => liftMetaFinishingTactic moveTactic
@@ -49,3 +49,6 @@ example : B X a A A X = B X a A A := by create
 example : a A A = a A A := by create
 -- Deep tail: multiple non-matching heads before a simplifiable block
 example : b X b X a A A X = b X b X a A A := by create
+
+example : A a A X = A A a := by
+  sorry
