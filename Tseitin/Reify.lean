@@ -301,26 +301,10 @@ section matchPrefix
 variable (tops bots : List Cell)
 
 lemma matchPrefix_tops : tops = (matchPrefix tops bots).1 ++ (matchPrefix tops bots).2.1 := by
-  induction tops generalizing bots with
-  | nil => simp [matchPrefix]
-  | cons c tops ih =>
-    cases bots with
-    | nil => simp [matchPrefix]
-    | cons c₁ bots₁ =>
-      unfold matchPrefix; split
-      · next h => subst h; simpa using ih bots₁
-      · simp
+  fun_induction matchPrefix with grind
 
 lemma matchPrefix_bots : bots = (matchPrefix tops bots).1 ++ (matchPrefix tops bots).2.2 := by
-  induction tops generalizing bots with
-  | nil => simp [matchPrefix]
-  | cons c tops ih =>
-    cases bots with
-    | nil => simp [matchPrefix]
-    | cons c₁ bots₁ =>
-      unfold matchPrefix; split
-      · next h => subst h; simpa using ih bots₁
-      · simp
+  fun_induction matchPrefix with grind
 
 end matchPrefix
 
@@ -328,13 +312,7 @@ section moveX
 
 lemma X_cell_swap (c : Cell) (rest : List TseitinGen) :
     denote (X' :: Cell.asTop c :: Cell.asBot c :: rest) = denote (Cell.asBot c :: X' :: rest) := by
-  cases rest with
-  | nil => cases c <;> [exact ea_swap; exact eb_swap]
-  | cons r rs =>
-    cases c <;> simp only [denote_cons_cons, Cell.asTop, Cell.asBot, mk_a', mk_b', mk_A', mk_B',
-      mk_X']
-    · rw [← _root_.mul_assoc, ← _root_.mul_assoc, ea_swap, _root_.mul_assoc]
-    · rw [← _root_.mul_assoc, ← _root_.mul_assoc, eb_swap, _root_.mul_assoc]
+  cases rest with cases c <;> simp [ea_swap, eb_swap]
 
 lemma denote_matchPrefix_swap (pfx tops₁ bots₁ : List Cell)
     (rest : List TseitinGen) :
