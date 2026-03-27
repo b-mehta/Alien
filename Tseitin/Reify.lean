@@ -84,15 +84,15 @@ open Compressed
 section
 
 /-- Interleave two `Cell` lists as generators: tops first, then bots. -/
-@[expose] public def mapPair (a b : List Cell) : List TseitinGen :=
-  a.map Cell.asTop ++ b.map Cell.asBot
+@[expose] public def mapPair (tops bots : List Cell) : List TseitinGen :=
+  tops.map Cell.asTop ++ bots.map Cell.asBot
 
 @[simp] lemma mapPair_nil_nil : mapPair [] [] = [] := rfl
-@[simp] lemma mapPair_nil_left {b : List Cell} : mapPair [] b = b.map Cell.asBot := rfl
-@[simp] lemma mapPair_nil_right {a : List Cell} : mapPair a [] = a.map Cell.asTop := by
+@[simp] lemma mapPair_nil_left {bots : List Cell} : mapPair [] bots = bots.map Cell.asBot := rfl
+@[simp] lemma mapPair_nil_right {tops : List Cell} : mapPair tops [] = tops.map Cell.asTop := by
   simp [mapPair]
-@[simp] lemma mapPair_cons_left {x : Cell} {as : List Cell} {b : List Cell} :
-    mapPair (x :: as) b = x.asTop :: mapPair as b := by
+@[simp] lemma mapPair_cons_left {c : Cell} {tops : List Cell} {bots : List Cell} :
+    mapPair (c :: tops) bots = c.asTop :: mapPair tops bots := by
   simp [mapPair]
 
 /-- Flatten a `Compressed` value back to a `List TseitinGen`, inserting `X'` between segments. -/
@@ -109,14 +109,17 @@ section
       mapPair tops bots ++ .X' :: toList ⟨t.1, t.2, tail⟩ := by
   rw [toList]
 
-@[grind .] lemma toList_ne_empty_of_top {a b c} (ha : a ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
-  cases c with simp [mapPair, *]
+@[grind .] lemma toList_ne_empty_of_top {tops bots tl} (ha : tops ≠ []) :
+    toList ⟨tops, bots, tl⟩ ≠ [] := by
+  cases tl with simp [mapPair, *]
 
-@[grind .] lemma toList_ne_empty_of_bot {a b c} (bots : b ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
-  cases c with simp [mapPair, *]
+@[grind .] lemma toList_ne_empty_of_bot {tops bots tl} (hb : bots ≠ []) :
+    toList ⟨tops, bots, tl⟩ ≠ [] := by
+  cases tl with simp [mapPair, *]
 
-@[grind .] lemma toList_ne_empty_of_tail {a b c} (hc : c ≠ []) : toList ⟨a, b, c⟩ ≠ [] := by
-  cases c with simp_all
+@[grind .] lemma toList_ne_empty_of_tail {tops bots tl} (hc : tl ≠ []) :
+    toList ⟨tops, bots, tl⟩ ≠ [] := by
+  cases tl with simp_all
 
 @[simp] lemma toList_cons_top (c : Cell) (tops : List Cell) (bots : List Cell)
     (tl : List (List Cell × List Cell)) :
@@ -156,14 +159,15 @@ lemma denote_bots_comm_tops {tops bots : List Cell} {rest : List TseitinGen} :
     denote (toList ⟨tops, c :: bots, tl⟩) = denote (c.asBot :: toList ⟨tops, bots, tl⟩) := by
   cases tl with simp [mapPair, ← denote_bot_comm_tops]
 
-lemma denote_mapPair_merge {t1 t2 b1 b2 : List Cell} (rest : List TseitinGen) :
-    denote (mapPair t1 b1 ++ (mapPair t2 b2 ++ rest)) =
-    denote (mapPair (t1 ++ t2) (b1 ++ b2) ++ rest) := by
+lemma denote_mapPair_merge {tops₁ tops₂ bots₁ bots₂ : List Cell} (rest : List TseitinGen) :
+    denote (mapPair tops₁ bots₁ ++ (mapPair tops₂ bots₂ ++ rest)) =
+    denote (mapPair (tops₁ ++ tops₂) (bots₁ ++ bots₂) ++ rest) := by
   simpa [mapPair] using
     denote_prefix_congr denote_bots_comm_tops (by grind [List.append_eq_nil_iff])
 
-lemma denote_mapPair_merge' {t1 t2 b1 b2 : List Cell} :
-    denote (mapPair t1 b1 ++ mapPair t2 b2) = denote (mapPair (t1 ++ t2) (b1 ++ b2)) := by
+lemma denote_mapPair_merge' {tops₁ tops₂ bots₁ bots₂ : List Cell} :
+    denote (mapPair tops₁ bots₁ ++ mapPair tops₂ bots₂) =
+    denote (mapPair (tops₁ ++ tops₂) (bots₁ ++ bots₂)) := by
   simpa using denote_mapPair_merge []
 
 lemma denote_mapPair_mul_X {tops bots : List Cell}
@@ -182,12 +186,12 @@ lemma denote_X_absorb {tops bots : List Cell}
   cases rest with simp [denote_append_cons hne, denote_mapPair_mul_X, *]
 
 lemma merge_segments {tops bots : List Cell} (ha : [.a] <:+ tops) (haa : [.a, .a] <:+ bots)
-    (top bot : List Cell) (tl : List (List Cell × List Cell)) :
-    denote (toList ⟨tops, bots, (top, bot) :: tl⟩) =
-    denote (toList ⟨tops ++ top, bots ++ bot, tl⟩) := by
+    (tops₁ bots₁ : List Cell) (tl : List (List Cell × List Cell)) :
+    denote (toList ⟨tops, bots, (tops₁, bots₁) :: tl⟩) =
+    denote (toList ⟨tops ++ tops₁, bots ++ bots₁, tl⟩) := by
   cases tl with
   | nil => simp [denote_X_absorb ha haa, denote_mapPair_merge']
-  | cons head tail => simp [denote_X_absorb ha haa, denote_mapPair_merge]
+  | cons hd tl => simp [denote_X_absorb ha haa, denote_mapPair_merge]
 
 /-- Normalise a `List TseitinGen` into `Compressed` form by scanning right-to-left:
 `X` starts a new segment, lowercase generators go into `headTop`, uppercase into `headBot`. -/
@@ -248,8 +252,8 @@ because in that case `X` is absorbed.  Recurses until no further merging is poss
 @[expose] public def simplify (c : Compressed) : Compressed :=
   simplifyAux c.headTop c.headBot c.tail
 
-lemma simplifyAux_toList_nil_iff (top bot : List Cell) (tl : List (List Cell × List Cell)) :
-    (simplifyAux top bot tl).toList = [] ↔ toList ⟨top, bot, tl⟩ = [] := by
+lemma simplifyAux_toList_nil_iff (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
+    (simplifyAux tops bots tl).toList = [] ↔ toList ⟨tops, bots, tl⟩ = [] := by
   fun_induction simplifyAux with grind [List.append_eq_nil_iff, List.IsSuffix.ne_nil]
 
 lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × List Cell)) :
@@ -257,7 +261,7 @@ lemma simplifyAux_correctness (tops bots : List Cell) (tl : List (List Cell × L
   fun_induction simplifyAux with
   | case1 => simp
   | case2 => grind [merge_segments]
-  | case3 t1 b1 t2 b2 tl h r ih =>
+  | case3 tops bots tops₁ bots₁ tl h r ih =>
     simp only [toList]
     refine denote_prefix_congr ?_ (by simp)
     apply denote_cons_congr ih
@@ -269,14 +273,13 @@ public lemma simplify_correctness : ∀ c, denote (simplify c).toList = denote c
   exact simplifyAux_correctness tops bots tl
 
 /-- Extract the longest common element-wise prefix of two `Cell` lists, returning
-`(matched, remTops, remBots)` such that `tops = matched ++ remTops`
-and `bots = matched ++ remBots`. -/
+`(pfx, tops₁, bots₁)` such that `tops = pfx ++ tops₁` and `bots = pfx ++ bots₁`. -/
 @[expose] public def matchPrefix : List Cell → List Cell → List Cell × List Cell × List Cell
-  | c :: tops, c' :: bots =>
-    if c = c' then
-      let (matched, remTops, remBots) := matchPrefix tops bots
-      (c :: matched, remTops, remBots)
-    else ([], c :: tops, c' :: bots)
+  | c :: tops, c₁ :: bots =>
+    if c = c₁ then
+      let (pfx, tops₁, bots₁) := matchPrefix tops bots
+      (c :: pfx, tops₁, bots₁)
+    else ([], c :: tops, c₁ :: bots)
   | tops, bots => ([], tops, bots)
 
 lemma matchPrefix_tops (tops bots : List Cell) :
@@ -286,9 +289,9 @@ lemma matchPrefix_tops (tops bots : List Cell) :
   | cons c tops ih =>
     cases bots with
     | nil => simp [matchPrefix]
-    | cons c' bots' =>
+    | cons c₁ bots₁ =>
       unfold matchPrefix; split
-      · next h => subst h; simpa using ih bots'
+      · next h => subst h; simpa using ih bots₁
       · simp
 
 lemma matchPrefix_bots (tops bots : List Cell) :
@@ -298,21 +301,21 @@ lemma matchPrefix_bots (tops bots : List Cell) :
   | cons c tops ih =>
     cases bots with
     | nil => simp [matchPrefix]
-    | cons c' bots' =>
+    | cons c₁ bots₁ =>
       unfold matchPrefix; split
-      · next h => subst h; simpa using ih bots'
+      · next h => subst h; simpa using ih bots₁
       · simp
 
 /-- Worker for `moveX`. For each `X` boundary, push it rightward past any common prefix
 of the adjacent top/bot lists using the `ea`/`eb` swap axioms, absorbing matched pairs
 into the preceding segment's `headBot`. -/
-@[expose] public def moveXAux (headTop headBot : List Cell) :
+@[expose] public def moveXAux (tops bots : List Cell) :
     List (List Cell × List Cell) → Compressed
-  | [] => ⟨headTop, headBot, []⟩
-  | (tops, bots) :: tl =>
-    let (matched, remTops, remBots) := matchPrefix tops bots
-    let r := moveXAux remTops remBots tl
-    ⟨headTop, headBot ++ matched, (r.headTop, r.headBot) :: r.tail⟩
+  | [] => ⟨tops, bots, []⟩
+  | (tops₁, bots₁) :: tl =>
+    let (pfx, tops₂, bots₂) := matchPrefix tops₁ bots₁
+    let r := moveXAux tops₂ bots₂ tl
+    ⟨tops, bots ++ pfx, (r.headTop, r.headBot) :: r.tail⟩
 
 /-- Push each `X` rightward past matching top/bot pairs via `ea`/`eb` swap axioms. -/
 @[expose] public def moveX (c : Compressed) : Compressed :=
@@ -332,65 +335,64 @@ lemma X_cell_swap (c : Cell) (rest : List TseitinGen) :
     · rw [← _root_.mul_assoc, ← _root_.mul_assoc, ea_swap, _root_.mul_assoc]
     · rw [← _root_.mul_assoc, ← _root_.mul_assoc, eb_swap, _root_.mul_assoc]
 
-lemma denote_matchPrefix_swap (matched remTops remBots : List Cell)
+lemma denote_matchPrefix_swap (pfx tops₁ bots₁ : List Cell)
     (rest : List TseitinGen) :
-    denote (X' :: mapPair (matched ++ remTops) (matched ++ remBots) ++ rest) =
-    denote (matched.map Cell.asBot ++ X' :: mapPair remTops remBots ++ rest) := by
-  induction matched generalizing remTops remBots rest with
+    denote (X' :: mapPair (pfx ++ tops₁) (pfx ++ bots₁) ++ rest) =
+    denote (pfx.map Cell.asBot ++ X' :: mapPair tops₁ bots₁ ++ rest) := by
+  induction pfx generalizing tops₁ bots₁ rest with
   | nil => simp
-  | cons c matched' ih =>
+  | cons c pfx₁ ih =>
     simp only [List.cons_append, mapPair, List.map_cons, List.map_append, List.append_assoc,
       List.cons_append]
-    -- move c.asBot past (matched'++remTops) tops via denote_bot_comm_tops
-    have h1 := denote_bot_comm_tops c (matched' ++ remTops)
-      ((matched' ++ remBots).map Cell.asBot ++ rest)
+    -- move c.asBot past (pfx₁++tops₁) tops via denote_bot_comm_tops
+    have h1 := denote_bot_comm_tops c (pfx₁ ++ tops₁)
+      ((pfx₁ ++ bots₁).map Cell.asBot ++ rest)
     simp only [List.map_append, List.append_assoc] at h1
     have h2 := denote_cons_congr (x := Cell.asTop c) h1 (by simp [List.append_eq_nil_iff])
     have h3 := denote_cons_congr (x := X') h2 (by simp)
     -- Now: denote (X' :: c.asTop :: (c.asBot :: ...) ++ ... ) — flatten cons_append
     rw [← h3, X_cell_swap]
-    -- denote (c.asBot :: X' :: ... ++ ...) = denote (c.asBot :: matched'.map asBot ++ ...)
-    have h4 := ih remTops remBots rest
+    -- denote (c.asBot :: X' :: ... ++ ...) = denote (c.asBot :: pfx₁.map asBot ++ ...)
+    have h4 := ih tops₁ bots₁ rest
     simp only [mapPair, List.map_append, List.append_assoc, List.cons_append] at h4
     exact denote_cons_congr (x := Cell.asBot c) h4 (by simp [List.append_eq_nil_iff])
 
-lemma moveXAux_toList_eq_nil (hTop hBot : List Cell)
+lemma moveXAux_toList_eq_nil (tops bots : List Cell)
     (tl : List (List Cell × List Cell)) :
-    (moveXAux hTop hBot tl).toList = [] ↔ toList ⟨hTop, hBot, tl⟩ = [] := by
-  induction tl generalizing hTop hBot with
+    (moveXAux tops bots tl).toList = [] ↔ toList ⟨tops, bots, tl⟩ = [] := by
+  induction tl generalizing tops bots with
   | nil => exact Iff.rfl
   | cons p tl _ =>
-    obtain ⟨t, b⟩ := p
+    obtain ⟨tops₁, bots₁⟩ := p
     simp only [moveXAux, Compressed.toList, mapPair_append_bots]
     constructor <;> (intro h; simp at h)
 
-lemma moveXAux_correctness (headTop headBot : List Cell)
+lemma moveXAux_correctness (tops bots : List Cell)
     (tl : List (List Cell × List Cell)) :
-    denote (moveXAux headTop headBot tl).toList = denote (toList ⟨headTop, headBot, tl⟩) := by
-  induction tl generalizing headTop headBot with
+    denote (moveXAux tops bots tl).toList = denote (toList ⟨tops, bots, tl⟩) := by
+  induction tl generalizing tops bots with
   | nil => rfl
   | cons p tl ih =>
-    obtain ⟨tops, bots⟩ := p
+    obtain ⟨tops₁, bots₁⟩ := p
     simp only [moveXAux]
-    set m := (matchPrefix tops bots).1
-    set rt := (matchPrefix tops bots).2.1
-    set rb := (matchPrefix tops bots).2.2
-    have htops : tops = m ++ rt := matchPrefix_tops tops bots
-    have hbots : bots = m ++ rb := matchPrefix_bots tops bots
-    set r := moveXAux rt rb tl
-    have ih_step : denote r.toList = denote (toList ⟨rt, rb, tl⟩) := ih rt rb
-    have hr_eta : (⟨r.headTop, r.headBot, r.tail⟩ : Compressed) = r := by cases r; rfl
-    simp only [Compressed.toList, mapPair_append_bots, List.append_assoc, hr_eta]
+    set pfx := (matchPrefix tops₁ bots₁).1
+    set tops₂ := (matchPrefix tops₁ bots₁).2.1
+    set bots₂ := (matchPrefix tops₁ bots₁).2.2
+    have htops : tops₁ = pfx ++ tops₂ := matchPrefix_tops tops₁ bots₁
+    have hbots : bots₁ = pfx ++ bots₂ := matchPrefix_bots tops₁ bots₁
+    set r := moveXAux tops₂ bots₂ tl
+    have ih_step : denote r.toList = denote (toList ⟨tops₂, bots₂, tl⟩) := ih tops₂ bots₂
+    simp only [Compressed.toList, mapPair_append_bots, List.append_assoc]
     rw [htops, hbots]
-    apply denote_prefix_congr (l := mapPair headTop headBot)
-    · -- Use congruence to replace r.toList with toList ⟨rt, rb, tl⟩
-      have h_inner := denote_cons_congr (x := X') ih_step (moveXAux_toList_eq_nil rt rb tl)
-      have h_swap := denote_prefix_congr (l := m.map Cell.asBot) h_inner ⟨by simp, by simp⟩
+    apply denote_prefix_congr (l := mapPair tops bots)
+    · have h_inner := denote_cons_congr (x := X') ih_step (moveXAux_toList_eq_nil tops₂ bots₂ tl)
+      have h_swap := denote_prefix_congr (l := pfx.map Cell.asBot) h_inner (by simp)
       rw [h_swap]
-      rcases tl with _ | ⟨⟨t2, b2⟩, tl'⟩ <;> simp only [Compressed.toList]
-      · have := (denote_matchPrefix_swap m rt rb []).symm
+      rcases tl with _ | ⟨⟨tops₃, bots₃⟩, tl₁⟩ <;> simp only [Compressed.toList]
+      · have := (denote_matchPrefix_swap pfx tops₂ bots₂ []).symm
         simpa using this
-      · have := (denote_matchPrefix_swap m rt rb (X' :: toList ⟨t2, b2, tl'⟩)).symm
+      · have := (denote_matchPrefix_swap pfx tops₂ bots₂
+            (X' :: toList ⟨tops₃, bots₃, tl₁⟩)).symm
         simpa [List.append_assoc] using this
     · simp
 
